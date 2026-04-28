@@ -90,7 +90,7 @@ private final class ClockWidgetFactory: NSObject, NanoBarWidgetFactory {
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
         let format = config["format"]!
-        let color  = Theme.color(hex: config["color"] ?? "") ?? Theme.calendarColor
+        let color  = Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.calendarColor)
         return NanoBarViewBox(AnyView(ClockWidgetView(format: format, color: color)))
     }
 }
@@ -107,6 +107,6 @@ public final class ClockPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSetti
     public var displayName: String { "Clock" }
     public func settingsSchema() -> [SettingsField] {[
         SettingsField(key: "format",  label: "Date format",  type: .text,  defaultValue: "EEE dd MMM HH:mm"),
-        SettingsField(key: "color",   label: "Icon color",   type: .color, defaultValue: "", adaptiveColor: Theme.calendarColor),
+        SettingsField(key: "color",   label: "Icon color",   type: .color, defaultValue: Theme.calendarColorLight, adaptiveColor: Theme.calendarColor, darkKey: "colorDark", darkDefaultValue: Theme.calendarColorDark),
     ]}
 }

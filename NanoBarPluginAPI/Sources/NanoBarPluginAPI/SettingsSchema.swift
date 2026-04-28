@@ -15,13 +15,24 @@ public struct SettingsField: Sendable {
     /// at render time so it re-resolves on every theme change.
     /// Nil for non-color fields or color fields with a fixed default.
     public let adaptiveColor: Color?
+    /// For `.color` fields: the TOML key that stores the dark-mode variant.
+    /// When non-nil, the Settings UI shows both a light and dark color picker.
+    /// `"auto"` sentinel means the dark color is generated algorithmically from the base.
+    /// Nil means no dark-variant support (single static color).
+    public let darkKey: String?
+    /// For `.color` fields with a `darkKey`: the default hex written to `darkKey` in TOML
+    /// when no user value exists. Matches the corresponding named `Theme.*Dark` constant.
+    public let darkDefaultValue: String?
 
-    public init(key: String, label: String, type: FieldType, defaultValue: String, adaptiveColor: Color? = nil) {
+    public init(key: String, label: String, type: FieldType, defaultValue: String,
+                adaptiveColor: Color? = nil, darkKey: String? = nil, darkDefaultValue: String? = nil) {
         self.key = key
         self.label = label
         self.type = type
         self.defaultValue = defaultValue
         self.adaptiveColor = adaptiveColor
+        self.darkKey = darkKey
+        self.darkDefaultValue = darkDefaultValue
     }
 }
 
@@ -82,8 +93,13 @@ public extension NanoBarPluginSettingsProvider {
     /// and can then safely force-unwrap `config["key"]` without carrying duplicate fallbacks.
     func resolvedSettings(_ raw: [String: String]) -> [String: String] {
         var resolved = raw
-        for field in settingsSchema() where resolved[field.key] == nil {
-            resolved[field.key] = field.defaultValue
+        for field in settingsSchema() {
+            if resolved[field.key] == nil {
+                resolved[field.key] = field.defaultValue
+            }
+            if let dk = field.darkKey, let ddv = field.darkDefaultValue, resolved[dk] == nil {
+                resolved[dk] = ddv
+            }
         }
         return resolved
     }

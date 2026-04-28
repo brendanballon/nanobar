@@ -241,7 +241,7 @@ private final class VolumeWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "volume" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        let color = Theme.color(hex: config["color"] ?? "") ?? Theme.volumeColor
+        let color = Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.volumeColor)
         return NanoBarViewBox(AnyView(VolumeWidgetView(color: color)))
     }
 }
@@ -257,6 +257,6 @@ public final class VolumePlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSett
 
     public var displayName: String { "Volume" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "color", label: "Icon color", type: .color, defaultValue: "", adaptiveColor: Theme.volumeColor),
+        SettingsField(key: "color", label: "Icon color", type: .color, defaultValue: Theme.volumeColorLight, adaptiveColor: Theme.volumeColor, darkKey: "colorDark", darkDefaultValue: Theme.volumeColorDark),
     ]}
 }

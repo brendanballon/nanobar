@@ -43,7 +43,11 @@ struct PluginDetailView: View {
     private var pluginFieldsSection: some View {
         Section(schema.displayName) {
             ForEach(schema.fields, id: \.key) { field in
-                SettingsFieldRow(field: field, pluginID: schema.pluginID)
+                if case .color = field.type, field.darkKey != nil {
+                    ColorDarkRow(field: field, pluginID: schema.pluginID)
+                } else {
+                    SettingsFieldRow(field: field, pluginID: schema.pluginID)
+                }
             }
         }
     }

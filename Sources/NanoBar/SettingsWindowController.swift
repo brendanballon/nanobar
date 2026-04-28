@@ -20,14 +20,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func open() {
         if let existing = window {
+            NSApp.activate()
             existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             return
         }
         let win = makeWindow()
         window = win
+        NSApp.activate()
         win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - NSWindowDelegate
@@ -45,6 +45,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         win.setContentSize(NSSize(width: 680, height: 540))
         win.minSize = NSSize(width: 560, height: 420)
+        win.level = .floating
         win.center()
         win.delegate = self
         win.isReleasedWhenClosed = false

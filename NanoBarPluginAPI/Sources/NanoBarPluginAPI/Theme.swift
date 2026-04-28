@@ -55,6 +55,30 @@ public enum Theme {
     )
     public static let pomodoroBreakColor: Color = spotifyActive
 
+    // MARK: - Named color hex strings (light / dark)
+    // Values are derived from the float constants above. Update both if you change a color.
+    public static let calendarColorLight  = "#C72447FF"
+    public static let calendarColorDark   = "#FFB3C1FF"
+    public static let keyboardColorLight  = "#802EB8FF"
+    public static let keyboardColorDark   = "#DDB6F2FF"
+    public static let spotifyActiveLight  = "#05856BFF"
+    public static let spotifyActiveDark   = "#B5EAD7FF"
+    public static let volumeColorLight    = "#2E66B8FF"
+    public static let volumeColorDark     = "#AEC6E8FF"
+    public static let batteryGreenLight   = "#149414FF"
+    public static let batteryGreenDark    = "#B5EAD7FF"
+    public static let batteryYellowLight  = "#A67A00FF"
+    public static let batteryYellowDark   = "#FFF5BAFF"
+    public static let batteryOrangeLight  = "#C76100FF"
+    public static let batteryOrangeDark   = "#FFD1A8FF"
+    public static let batteryRedLight     = "#C71414FF"
+    public static let batteryRedDark      = "#FFB3C1FF"
+    public static let tmuxColorLight      = "#148514FF"
+    public static let tmuxColorDark       = "#ADEAAFFF"
+    public static let pomodoroWorkLight   = "#CC1414FF"
+    public static let pomodoroWorkDark    = "#FF6B6BFF"
+    // pomodoroBreak = spotifyActive
+
     // MARK: - Layout
     public static let barHeight: CGFloat = 30
     public static let barMargin: CGFloat = 8
@@ -95,6 +119,69 @@ public enum Theme {
 
     // MARK: - Config helpers
 
+    /// Sentinel TOML value for an auto-generated dark variant: `colorDark = "auto"`.
+    public static let darkVariantAuto = "auto"
+
+    /// Resolve a color from TOML config, with optional dark-mode variant.
+    ///
+    /// Either side may be the `"auto"` sentinel — at most one at a time:
+    /// - `darkHex == "auto"`: dark is generated from light.
+    /// - `hex == "auto"`: light is generated from dark.
+    /// - Both explicit: used as-is.
+    /// - No explicit value on either side: returns `fallback`.
+    public static func adaptiveColor(hex: String?, darkHex: String?, fallback: Color) -> Color {
+        let lightIsAuto = hex      == darkVariantAuto
+        let darkIsAuto  = darkHex  == darkVariantAuto
+
+        let explicitLight = lightIsAuto ? nil : hex.flatMap      { $0.isEmpty ? nil : color(hex: $0) }
+        let explicitDark  = darkIsAuto  ? nil : darkHex.flatMap  { $0.isEmpty ? nil : color(hex: $0) }
+
+        let lightColor: Color?
+        let darkColor:  Color?
+
+        if lightIsAuto, let dark = explicitDark {
+            lightColor = generatedComplement(for: dark)
+            darkColor  = dark
+        } else if darkIsAuto, let light = explicitLight {
+            lightColor = light
+            darkColor  = generatedComplement(for: light)
+        } else {
+            lightColor = explicitLight
+            darkColor  = explicitDark
+        }
+
+        guard let light = lightColor else { return fallback }
+        guard let dark  = darkColor  else { return light }
+        return adaptive(light: light, dark: dark)
+    }
+
+    /// Generate a theme-appropriate complement for the opposite appearance mode.
+    ///
+    /// Works in HSB space:
+    /// - Dark base (luminance < 0.3): reduces saturation, cranks brightness toward a light
+    ///   pastel suitable for dark mode.
+    /// - Light/pastel base (luminance ≥ 0.3): increases saturation, drops brightness toward
+    ///   a rich shade suitable for light mode.
+    public static func generatedComplement(for baseColor: Color) -> Color {
+        guard let ns = NSColor(baseColor).usingColorSpace(.sRGB) else { return baseColor }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let luminance = 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent
+        if luminance < 0.3 {
+            // Dark/rich → light pastel for dark mode
+            return Color(NSColor(hue: h, saturation: s * 0.45, brightness: min(b * 0.5 + 0.55, 0.97), alpha: a))
+        } else {
+            // Light/pastel → dark saturated for light mode
+            return Color(NSColor(hue: h, saturation: min(s * 1.8, 0.90), brightness: b * 0.45, alpha: a))
+        }
+    }
+
+    /// Returns true if the color is perceptually light (luminance ≥ 0.3).
+    public static func isLight(_ color: Color) -> Bool {
+        guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return true }
+        return 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent >= 0.3
+    }
+
     /// Returns an adaptive Color that resolves to `dark` in Dark Mode and `light` in Light Mode.
     /// Uses NSColor's dynamic provider — the same mechanism NSApp.appearance drives —
     /// so colors update on theme switch and respect vibrancy behind glass materials.
@@ -133,9 +220,30 @@ public enum Theme {
 
 public extension Color {
     /// Encodes the color as an 8-digit hex string `"#RRGGBBAA"` in sRGB.
-    /// Returns nil if the color space conversion fails.
+    ///
+    /// Tries direct NSColor → sRGB first (fast path). Falls back to CGColor conversion
+    /// so wide-gamut / P3 colors from the system color panel are never silently dropped.
     func toHex8() -> String? {
-        guard let ns = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        let ns = NSColor(self)
+        // Fast path: already in (or trivially convertible to) sRGB.
+        if let srgb = ns.usingColorSpace(.sRGB) {
+            return Self.hexString(srgb)
+        }
+        // Fallback: go through CGColor for wide-gamut / display-P3 / catalog colors.
+        let cg = ns.cgColor
+        if let srgbSpace = CGColorSpace(name: CGColorSpace.sRGB),
+           let converted = cg.converted(to: srgbSpace, intent: .defaultIntent, options: nil),
+           let comps = converted.components, comps.count >= 3 {
+            let r = Int((comps[0]                            * 255).rounded())
+            let g = Int((comps[1]                            * 255).rounded())
+            let b = Int((comps[2]                            * 255).rounded())
+            let a = Int(((comps.count >= 4 ? comps[3] : 1)  * 255).rounded())
+            return String(format: "#%02X%02X%02X%02X", r, g, b, a)
+        }
+        return nil
+    }
+
+    private static func hexString(_ ns: NSColor) -> String {
         let r = Int((ns.redComponent   * 255).rounded())
         let g = Int((ns.greenComponent * 255).rounded())
         let b = Int((ns.blueComponent  * 255).rounded())
