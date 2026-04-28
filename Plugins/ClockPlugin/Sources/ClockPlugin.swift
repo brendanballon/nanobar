@@ -53,11 +53,15 @@ private final class ClockState: ObservableObject, @unchecked Sendable {
 
 private struct ClockWidgetView: View {
     @StateObject private var state: ClockState
-    let color: Color
+    let lightColor: Color
+    let darkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var color: Color { colorScheme == .dark ? darkColor : lightColor }
 
-    init(format: String, color: Color) {
+    init(format: String, lightColor: Color, darkColor: Color) {
         _state = StateObject(wrappedValue: ClockState(format: format))
-        self.color = color
+        self.lightColor = lightColor
+        self.darkColor  = darkColor
     }
 
     @ViewBuilder
@@ -90,8 +94,9 @@ private final class ClockWidgetFactory: NSObject, NanoBarWidgetFactory {
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
         let format = config["format"]!
-        let color  = Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.calendarColor)
-        return NanoBarViewBox(AnyView(ClockWidgetView(format: format, color: color)))
+        let light  = Theme.color(hex: config["color"])     ?? Theme.calendarColorLight
+        let dark   = Theme.color(hex: config["colorDark"]) ?? Theme.calendarColorDark
+        return NanoBarViewBox(AnyView(ClockWidgetView(format: format, lightColor: light, darkColor: dark)))
     }
 }
 
@@ -107,6 +112,8 @@ public final class ClockPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSetti
     public var displayName: String { "Clock" }
     public func settingsSchema() -> [SettingsField] {[
         SettingsField(key: "format",  label: "Date format",  type: .text,  defaultValue: "EEE dd MMM HH:mm"),
-        SettingsField(key: "color",   label: "Icon color",   type: .color, defaultValue: Theme.calendarColorLight, adaptiveColor: Theme.calendarColor, darkKey: "colorDark", darkDefaultValue: Theme.calendarColorDark),
+        SettingsField(key: "color",   label: "Icon color",   type: .color,
+                      defaultValue: Theme.calendarColorLight.toHex8() ?? "",
+                      darkKey: "colorDark", darkDefaultValue: Theme.calendarColorDark.toHex8() ?? ""),
     ]}
 }

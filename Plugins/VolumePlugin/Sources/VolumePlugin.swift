@@ -201,7 +201,10 @@ private final class VolumeState: ObservableObject, @unchecked Sendable {
 
 private struct VolumeWidgetView: View {
     @StateObject private var state = VolumeState()
-    let color: Color
+    let lightColor: Color
+    let darkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var color: Color { colorScheme == .dark ? darkColor : lightColor }
 
     private var volume: Float { state.volume }
     private var pct: Int { Int(volume * 100) }
@@ -241,8 +244,9 @@ private final class VolumeWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "volume" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        let color = Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.volumeColor)
-        return NanoBarViewBox(AnyView(VolumeWidgetView(color: color)))
+        let light = Theme.color(hex: config["color"])    ?? Theme.volumeColorLight
+        let dark  = Theme.color(hex: config["colorDark"]) ?? Theme.volumeColorDark
+        return NanoBarViewBox(AnyView(VolumeWidgetView(lightColor: light, darkColor: dark)))
     }
 }
 
@@ -257,6 +261,8 @@ public final class VolumePlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSett
 
     public var displayName: String { "Volume" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "color", label: "Icon color", type: .color, defaultValue: Theme.volumeColorLight, adaptiveColor: Theme.volumeColor, darkKey: "colorDark", darkDefaultValue: Theme.volumeColorDark),
+        SettingsField(key: "color", label: "Icon color", type: .color,
+                      defaultValue: Theme.volumeColorLight.toHex8() ?? "",
+                      darkKey: "colorDark", darkDefaultValue: Theme.volumeColorDark.toHex8() ?? ""),
     ]}
 }

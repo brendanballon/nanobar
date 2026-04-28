@@ -8,29 +8,21 @@ public struct SettingsField: Sendable {
     public let label: String
     public let type: FieldType
     /// TOML-compatible default value string (e.g. `"#FFFFFF"`, `"25"`, `"true"`).
-    /// For `.color` fields with adaptive defaults, pass `""` here and supply `adaptiveColor`.
     public let defaultValue: String
-    /// For `.color` fields: the live adaptive `Theme` color shown in the picker when no
-    /// custom value is set. Stored as `""` in config; the factory falls back to this Color
-    /// at render time so it re-resolves on every theme change.
-    /// Nil for non-color fields or color fields with a fixed default.
-    public let adaptiveColor: Color?
     /// For `.color` fields: the TOML key that stores the dark-mode variant.
     /// When non-nil, the Settings UI shows both a light and dark color picker.
-    /// `"auto"` sentinel means the dark color is generated algorithmically from the base.
-    /// Nil means no dark-variant support (single static color).
+    /// Nil means single static color.
     public let darkKey: String?
     /// For `.color` fields with a `darkKey`: the default hex written to `darkKey` in TOML
     /// when no user value exists. Matches the corresponding named `Theme.*Dark` constant.
     public let darkDefaultValue: String?
 
     public init(key: String, label: String, type: FieldType, defaultValue: String,
-                adaptiveColor: Color? = nil, darkKey: String? = nil, darkDefaultValue: String? = nil) {
+                darkKey: String? = nil, darkDefaultValue: String? = nil) {
         self.key = key
         self.label = label
         self.type = type
         self.defaultValue = defaultValue
-        self.adaptiveColor = adaptiveColor
         self.darkKey = darkKey
         self.darkDefaultValue = darkDefaultValue
     }

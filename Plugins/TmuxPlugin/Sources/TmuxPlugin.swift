@@ -56,7 +56,10 @@ private final class TmuxState: ObservableObject {
 
 private struct TmuxWidgetView: View {
     @StateObject private var state = TmuxState()
-    let color: Color
+    let lightColor: Color
+    let darkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var color: Color { colorScheme == .dark ? darkColor : lightColor }
 
     var body: some View {
         HStack(spacing: Theme.iconLabelSpacing) {
@@ -83,11 +86,9 @@ private final class TmuxWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "tmux" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        NanoBarViewBox(AnyView(TmuxWidgetView(color: accentColor)))
-    }
-
-    private var accentColor: Color {
-        Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.tmuxColor)
+        let light = Theme.color(hex: config["color"])     ?? Theme.tmuxColorLight
+        let dark  = Theme.color(hex: config["colorDark"]) ?? Theme.tmuxColorDark
+        return NanoBarViewBox(AnyView(TmuxWidgetView(lightColor: light, darkColor: dark)))
     }
 }
 
@@ -103,6 +104,8 @@ public final class TmuxPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSettin
 
     public var displayName: String { "Tmux" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "color", label: "Icon color", type: .color, defaultValue: Theme.tmuxColorLight, adaptiveColor: Theme.tmuxColor, darkKey: "colorDark", darkDefaultValue: Theme.tmuxColorDark),
+        SettingsField(key: "color", label: "Icon color", type: .color,
+                      defaultValue: Theme.tmuxColorLight.toHex8() ?? "",
+                      darkKey: "colorDark", darkDefaultValue: Theme.tmuxColorDark.toHex8() ?? ""),
     ]}
 }

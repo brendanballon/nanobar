@@ -75,7 +75,10 @@ private final class KeyboardState: ObservableObject, @unchecked Sendable {
 
 private struct KeyboardWidgetView: View {
     @StateObject private var state = KeyboardState()
-    let color: Color
+    let lightColor: Color
+    let darkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var color: Color { colorScheme == .dark ? darkColor : lightColor }
     @State private var wiggle = false
 
     var body: some View {
@@ -106,8 +109,9 @@ private final class KeyboardWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "keyboard" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        let color = Theme.adaptiveColor(hex: config["color"], darkHex: config["colorDark"], fallback: Theme.keyboardColor)
-        return NanoBarViewBox(AnyView(KeyboardWidgetView(color: color)))
+        let light = Theme.color(hex: config["color"])     ?? Theme.keyboardColorLight
+        let dark  = Theme.color(hex: config["colorDark"]) ?? Theme.keyboardColorDark
+        return NanoBarViewBox(AnyView(KeyboardWidgetView(lightColor: light, darkColor: dark)))
     }
 }
 
@@ -122,6 +126,8 @@ public final class KeyboardPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSe
 
     public var displayName: String { "Keyboard" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "color", label: "Icon color", type: .color, defaultValue: Theme.keyboardColorLight, adaptiveColor: Theme.keyboardColor, darkKey: "colorDark", darkDefaultValue: Theme.keyboardColorDark),
+        SettingsField(key: "color", label: "Icon color", type: .color,
+                      defaultValue: Theme.keyboardColorLight.toHex8() ?? "",
+                      darkKey: "colorDark", darkDefaultValue: Theme.keyboardColorDark.toHex8() ?? ""),
     ]}
 }

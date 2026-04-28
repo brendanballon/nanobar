@@ -150,7 +150,10 @@ private struct MarqueeText: View {
 
 private struct SpotifyWidgetView: View {
     @StateObject private var state = NowPlayingState()
-    let activeColor: Color
+    let activeLightColor: Color
+    let activeDarkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var activeColor: Color { colorScheme == .dark ? activeDarkColor : activeLightColor }
 
     private static let iconSize:  CGFloat = 12
     private static let spacing:   CGFloat = 8   // iconPadRight + labelPadLeft
@@ -188,11 +191,9 @@ private final class SpotifyWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "now_playing" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        NanoBarViewBox(AnyView(SpotifyWidgetView(activeColor: activeColor)))
-    }
-
-    private var activeColor: Color {
-        Theme.adaptiveColor(hex: config["activeColor"], darkHex: config["activeColorDark"], fallback: Theme.spotifyActive)
+        let light = Theme.color(hex: config["activeColor"])     ?? Theme.spotifyActiveLight
+        let dark  = Theme.color(hex: config["activeColorDark"]) ?? Theme.spotifyActiveDark
+        return NanoBarViewBox(AnyView(SpotifyWidgetView(activeLightColor: light, activeDarkColor: dark)))
     }
 }
 
@@ -207,6 +208,8 @@ public final class SpotifyPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSet
 
     public var displayName: String { "Now Playing" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "activeColor", label: "Active color", type: .color, defaultValue: Theme.spotifyActiveLight, adaptiveColor: Theme.spotifyActive, darkKey: "activeColorDark", darkDefaultValue: Theme.spotifyActiveDark),
+        SettingsField(key: "activeColor", label: "Active color", type: .color,
+                      defaultValue: Theme.spotifyActiveLight.toHex8() ?? "",
+                      darkKey: "activeColorDark", darkDefaultValue: Theme.spotifyActiveDark.toHex8() ?? ""),
     ]}
 }

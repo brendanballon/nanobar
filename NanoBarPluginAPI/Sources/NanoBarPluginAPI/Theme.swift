@@ -1,82 +1,32 @@
-import AppKit
 import SwiftUI
 
 public enum Theme {
-    // MARK: - Colors (adaptive — correct on dark, light, and liquid glass)
-    public static let iconColor: Color     = adaptive(
-        light: Color(red: 0.50, green: 0.18, blue: 0.72),  // purple
-        dark:  Color(red: 0.867, green: 0.714, blue: 0.949) // lavender
-    )
-    public static let labelColor: Color    = .primary
-    public static let grey: Color          = .secondary
+    // MARK: - Colors (light / dark pairs — pick based on @Environment(\.colorScheme))
+    public static let labelColor: Color = .primary
+    public static let grey:       Color = .secondary
 
-    public static let spotifyActive: Color = adaptive(
-        light: Color(red: 0.02, green: 0.52, blue: 0.42),   // teal
-        dark:  Color(red: 0.710, green: 0.918, blue: 0.843) // mint
-    )
-    public static let spotifyPaused: Color = .secondary
-    public static let volumeColor: Color   = adaptive(
-        light: Color(red: 0.18, green: 0.40, blue: 0.72),   // steel blue
-        dark:  Color(red: 0.682, green: 0.776, blue: 0.910) // powder blue
-    )
-    public static let calendarColor: Color = adaptive(
-        light: Color(red: 0.78, green: 0.14, blue: 0.28),   // crimson
-        dark:  Color(red: 1.000, green: 0.702, blue: 0.757) // rose
-    )
-    public static let keyboardColor: Color = adaptive(
-        light: Color(red: 0.50, green: 0.18, blue: 0.72),   // purple
-        dark:  Color(red: 0.867, green: 0.714, blue: 0.949) // lavender
-    )
-
-    public static let batteryGreen: Color  = adaptive(
-        light: Color(red: 0.08, green: 0.58, blue: 0.08),   // forest green
-        dark:  Color(red: 0.710, green: 0.918, blue: 0.843) // mint
-    )
-    public static let batteryYellow: Color = adaptive(
-        light: Color(red: 0.65, green: 0.48, blue: 0.00),   // dark amber
-        dark:  Color(red: 1.000, green: 0.961, blue: 0.729) // pale yellow
-    )
-    public static let batteryOrange: Color = adaptive(
-        light: Color(red: 0.78, green: 0.38, blue: 0.00),   // dark orange
-        dark:  Color(red: 1.000, green: 0.820, blue: 0.659) // peach
-    )
-    public static let batteryRed: Color    = adaptive(
-        light: Color(red: 0.78, green: 0.08, blue: 0.08),   // dark red
-        dark:  Color(red: 1.000, green: 0.702, blue: 0.757) // rose
-    )
-
-    public static let tmuxColor:          Color = adaptive(
-        light: Color(red: 0.08, green: 0.52, blue: 0.08),   // forest green
-        dark:  Color(red: 0.678, green: 0.918, blue: 0.686) // mint-green
-    )
-    public static let pomodoroWorkColor:  Color = adaptive(
-        light: Color(red: 0.80, green: 0.08, blue: 0.08),   // dark red
-        dark:  Color(red: 1.000, green: 0.420, blue: 0.420) // soft red
-    )
-    public static let pomodoroBreakColor: Color = spotifyActive
-
-    // MARK: - Named color hex strings (light / dark)
-    // Values are derived from the float constants above. Update both if you change a color.
-    public static let calendarColorLight  = "#C72447FF"
-    public static let calendarColorDark   = "#FFB3C1FF"
-    public static let keyboardColorLight  = "#802EB8FF"
-    public static let keyboardColorDark   = "#DDB6F2FF"
-    public static let spotifyActiveLight  = "#05856BFF"
-    public static let spotifyActiveDark   = "#B5EAD7FF"
-    public static let volumeColorLight    = "#2E66B8FF"
-    public static let volumeColorDark     = "#AEC6E8FF"
-    public static let batteryGreenLight   = "#149414FF"
-    public static let batteryGreenDark    = "#B5EAD7FF"
-    public static let batteryYellowLight  = "#A67A00FF"
-    public static let batteryYellowDark   = "#FFF5BAFF"
-    public static let batteryOrangeLight  = "#C76100FF"
-    public static let batteryOrangeDark   = "#FFD1A8FF"
-    public static let batteryRedLight     = "#C71414FF"
-    public static let batteryRedDark      = "#FFB3C1FF"
-    public static let tmuxColorLight      = "#148514FF"
-    public static let tmuxColorDark       = "#ADEAAFFF"
-    public static let pomodoroWorkLight   = "#CC1414FF"
-    public static let pomodoroWorkDark    = "#FF6B6BFF"
+    public static let iconColorLight:     Color = Color(red: 0.50,  green: 0.18,  blue: 0.72)   // purple
+    public static let iconColorDark:      Color = Color(red: 0.867, green: 0.714, blue: 0.949)  // lavender
+    public static let spotifyActiveLight: Color = Color(red: 0.02,  green: 0.52,  blue: 0.42)   // teal
+    public static let spotifyActiveDark:  Color = Color(red: 0.710, green: 0.918, blue: 0.843)  // mint
+    public static let volumeColorLight:   Color = Color(red: 0.18,  green: 0.40,  blue: 0.72)   // steel blue
+    public static let volumeColorDark:    Color = Color(red: 0.682, green: 0.776, blue: 0.910)  // powder blue
+    public static let calendarColorLight: Color = Color(red: 0.78,  green: 0.14,  blue: 0.28)   // crimson
+    public static let calendarColorDark:  Color = Color(red: 1.000, green: 0.702, blue: 0.757)  // rose
+    public static let keyboardColorLight: Color = iconColorLight
+    public static let keyboardColorDark:  Color = iconColorDark
+    public static let batteryGreenLight:  Color = Color(red: 0.08,  green: 0.58,  blue: 0.08)   // forest green
+    public static let batteryGreenDark:   Color = Color(red: 0.710, green: 0.918, blue: 0.843)  // mint
+    public static let batteryYellowLight: Color = Color(red: 0.65,  green: 0.48,  blue: 0.00)   // dark amber
+    public static let batteryYellowDark:  Color = Color(red: 1.000, green: 0.961, blue: 0.729)  // pale yellow
+    public static let batteryOrangeLight: Color = Color(red: 0.78,  green: 0.38,  blue: 0.00)   // dark orange
+    public static let batteryOrangeDark:  Color = Color(red: 1.000, green: 0.820, blue: 0.659)  // peach
+    public static let batteryRedLight:    Color = Color(red: 0.78,  green: 0.08,  blue: 0.08)   // dark red
+    public static let batteryRedDark:     Color = Color(red: 1.000, green: 0.702, blue: 0.757)  // rose
+    public static let tmuxColorLight:     Color = Color(red: 0.08,  green: 0.52,  blue: 0.08)   // forest green
+    public static let tmuxColorDark:      Color = Color(red: 0.678, green: 0.918, blue: 0.686)  // mint-green
+    public static let pomodoroWorkLight:  Color = Color(red: 0.80,  green: 0.08,  blue: 0.08)   // dark red
+    public static let pomodoroWorkDark:   Color = Color(red: 1.000, green: 0.420, blue: 0.420)  // soft red
     // pomodoroBreak = spotifyActive
 
     // MARK: - Layout
@@ -116,83 +66,6 @@ public enum Theme {
     public static let animEaseSlow:        Animation = .easeInOut(duration: 0.4)
     public static let springIconHover:     Animation = .spring(response: 0.2, dampingFraction: 0.7)
     public static let springLabelHover:    Animation = .spring(response: 0.3, dampingFraction: 0.75)
-
-    // MARK: - Config helpers
-
-    /// Sentinel TOML value for an auto-generated dark variant: `colorDark = "auto"`.
-    public static let darkVariantAuto = "auto"
-
-    /// Resolve a color from TOML config, with optional dark-mode variant.
-    ///
-    /// Either side may be the `"auto"` sentinel — at most one at a time:
-    /// - `darkHex == "auto"`: dark is generated from light.
-    /// - `hex == "auto"`: light is generated from dark.
-    /// - Both explicit: used as-is.
-    /// - No explicit value on either side: returns `fallback`.
-    public static func adaptiveColor(hex: String?, darkHex: String?, fallback: Color) -> Color {
-        let lightIsAuto = hex      == darkVariantAuto
-        let darkIsAuto  = darkHex  == darkVariantAuto
-
-        let explicitLight = lightIsAuto ? nil : hex.flatMap      { $0.isEmpty ? nil : color(hex: $0) }
-        let explicitDark  = darkIsAuto  ? nil : darkHex.flatMap  { $0.isEmpty ? nil : color(hex: $0) }
-
-        let lightColor: Color?
-        let darkColor:  Color?
-
-        if lightIsAuto, let dark = explicitDark {
-            lightColor = generatedComplement(for: dark)
-            darkColor  = dark
-        } else if darkIsAuto, let light = explicitLight {
-            lightColor = light
-            darkColor  = generatedComplement(for: light)
-        } else {
-            lightColor = explicitLight
-            darkColor  = explicitDark
-        }
-
-        guard let light = lightColor else { return fallback }
-        guard let dark  = darkColor  else { return light }
-        return adaptive(light: light, dark: dark)
-    }
-
-    /// Generate a theme-appropriate complement for the opposite appearance mode.
-    ///
-    /// Works in HSB space:
-    /// - Dark base (luminance < 0.3): reduces saturation, cranks brightness toward a light
-    ///   pastel suitable for dark mode.
-    /// - Light/pastel base (luminance ≥ 0.3): increases saturation, drops brightness toward
-    ///   a rich shade suitable for light mode.
-    public static func generatedComplement(for baseColor: Color) -> Color {
-        guard let ns = NSColor(baseColor).usingColorSpace(.sRGB) else { return baseColor }
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let luminance = 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent
-        if luminance < 0.3 {
-            // Dark/rich → light pastel for dark mode
-            return Color(NSColor(hue: h, saturation: s * 0.45, brightness: min(b * 0.5 + 0.55, 0.97), alpha: a))
-        } else {
-            // Light/pastel → dark saturated for light mode
-            return Color(NSColor(hue: h, saturation: min(s * 1.8, 0.90), brightness: b * 0.45, alpha: a))
-        }
-    }
-
-    /// Returns true if the color is perceptually light (luminance ≥ 0.3).
-    public static func isLight(_ color: Color) -> Bool {
-        guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return true }
-        return 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent >= 0.3
-    }
-
-    /// Returns an adaptive Color that resolves to `dark` in Dark Mode and `light` in Light Mode.
-    /// Uses NSColor's dynamic provider — the same mechanism NSApp.appearance drives —
-    /// so colors update on theme switch and respect vibrancy behind glass materials.
-    public static func adaptive(light: Color, dark: Color) -> Color {
-        Color(NSColor(name: nil, dynamicProvider: { appearance in
-            switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
-            case .darkAqua: return NSColor(dark)
-            default:        return NSColor(light)
-            }
-        }))
-    }
 
     public static func color(hex: String?) -> Color? {
         guard let hex, hex.hasPrefix("#") else { return nil }

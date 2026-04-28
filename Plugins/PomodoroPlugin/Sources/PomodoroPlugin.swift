@@ -168,8 +168,13 @@ private struct SessionDots: View {
 
 private struct PomodoroWidgetView: View {
     @ObservedObject var state: PomodoroState
-    let workColor: Color
-    let breakColor: Color
+    let workLightColor:  Color
+    let workDarkColor:   Color
+    let breakLightColor: Color
+    let breakDarkColor:  Color
+    @Environment(\.colorScheme) private var colorScheme
+    private var workColor:  Color { colorScheme == .dark ? workDarkColor  : workLightColor  }
+    private var breakColor: Color { colorScheme == .dark ? breakDarkColor : breakLightColor }
     @State private var hovered = false
     @State private var alertOffset: CGFloat = 0
 
@@ -232,16 +237,20 @@ private struct PomodoroWidgetView: View {
 
 final class PomodoroWidgetFactory: NSObject, NanoBarWidgetFactory {
     let state: PomodoroState
-    private let workColor: Color
-    private let breakColor: Color
+    private let workLight:  Color
+    private let workDark:   Color
+    private let breakLight: Color
+    private let breakDark:  Color
 
     @MainActor init(config: [String: String]) {
         let workSecs         = Int((Double(config["work"]!)        ?? 25) * 60)
         let shortBreakSecs   = Int((Double(config["shortBreak"]!)  ?? 5)  * 60)
         let longBreakSecs    = Int((Double(config["longBreak"]!)   ?? 15) * 60)
         let pomodorosForLong = max(1, Int(config["sessions"]!) ?? 4)
-        self.workColor  = Theme.adaptiveColor(hex: config["workColor"],  darkHex: config["workColorDark"],  fallback: Theme.pomodoroWorkColor)
-        self.breakColor = Theme.adaptiveColor(hex: config["breakColor"], darkHex: config["breakColorDark"], fallback: Theme.pomodoroBreakColor)
+        self.workLight  = Theme.color(hex: config["workColor"])    ?? Theme.pomodoroWorkLight
+        self.workDark   = Theme.color(hex: config["workColorDark"]) ?? Theme.pomodoroWorkDark
+        self.breakLight = Theme.color(hex: config["breakColor"])    ?? Theme.spotifyActiveLight
+        self.breakDark  = Theme.color(hex: config["breakColorDark"]) ?? Theme.spotifyActiveDark
         self.state = PomodoroState(
             workSecs: workSecs,
             shortBreakSecs: shortBreakSecs,
@@ -255,8 +264,10 @@ final class PomodoroWidgetFactory: NSObject, NanoBarWidgetFactory {
     @MainActor func makeViewBox() -> NanoBarViewBox {
         NanoBarViewBox(AnyView(PomodoroWidgetView(
             state: state,
-            workColor: workColor,
-            breakColor: breakColor
+            workLightColor:  workLight,
+            workDarkColor:   workDark,
+            breakLightColor: breakLight,
+            breakDarkColor:  breakDark
         )))
     }
 }
@@ -276,7 +287,11 @@ public final class PomodoroPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSe
         SettingsField(key: "shortBreak", label: "Short break (min)", type: .stepper(min: 1, max: 60,  step: 1), defaultValue: "5"),
         SettingsField(key: "longBreak",  label: "Long break (min)",  type: .stepper(min: 1, max: 120, step: 1), defaultValue: "15"),
         SettingsField(key: "sessions",   label: "Sessions per cycle",type: .stepper(min: 1, max: 12,  step: 1), defaultValue: "4"),
-        SettingsField(key: "workColor",  label: "Work color",  type: .color, defaultValue: Theme.pomodoroWorkLight,   adaptiveColor: Theme.pomodoroWorkColor,  darkKey: "workColorDark",  darkDefaultValue: Theme.pomodoroWorkDark),
-        SettingsField(key: "breakColor", label: "Break color", type: .color, defaultValue: Theme.spotifyActiveLight, adaptiveColor: Theme.pomodoroBreakColor, darkKey: "breakColorDark", darkDefaultValue: Theme.spotifyActiveDark),
+        SettingsField(key: "workColor",  label: "Work color",  type: .color,
+                      defaultValue: Theme.pomodoroWorkLight.toHex8()  ?? "",
+                      darkKey: "workColorDark",  darkDefaultValue: Theme.pomodoroWorkDark.toHex8()  ?? ""),
+        SettingsField(key: "breakColor", label: "Break color", type: .color,
+                      defaultValue: Theme.spotifyActiveLight.toHex8() ?? "",
+                      darkKey: "breakColorDark", darkDefaultValue: Theme.spotifyActiveDark.toHex8() ?? ""),
     ]}
 }

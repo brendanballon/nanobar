@@ -75,9 +75,14 @@ private final class BatteryState: ObservableObject, @unchecked Sendable {
 
 private struct BatteryWidgetView: View {
     @StateObject private var state = BatteryState()
-    let colors: (normal: Color, warn: Color, med: Color, low: Color)
+    let lightColors: (normal: Color, warn: Color, med: Color, low: Color)
+    let darkColors:  (normal: Color, warn: Color, med: Color, low: Color)
+    @Environment(\.colorScheme) private var colorScheme
 
     private var info: BatteryInfo { state.info }
+    private var colors: (normal: Color, warn: Color, med: Color, low: Color) {
+        colorScheme == .dark ? darkColors : lightColors
+    }
 
     private var color: Color {
         if info.isCharging || info.percentage > Theme.batteryWarnThreshold { return colors.normal }
@@ -125,13 +130,19 @@ private final class BatteryWidgetFactory: NSObject, NanoBarWidgetFactory {
     var widgetID: String { "battery" }
 
     @MainActor func makeViewBox() -> NanoBarViewBox {
-        let colors = (
-            normal: Theme.adaptiveColor(hex: config["color"],     darkHex: config["colorDark"],     fallback: Theme.batteryGreen),
-            warn:   Theme.adaptiveColor(hex: config["warnColor"], darkHex: config["warnColorDark"], fallback: Theme.batteryYellow),
-            med:    Theme.adaptiveColor(hex: config["medColor"],  darkHex: config["medColorDark"],  fallback: Theme.batteryOrange),
-            low:    Theme.adaptiveColor(hex: config["lowColor"],  darkHex: config["lowColorDark"],  fallback: Theme.batteryRed)
+        let light = (
+            normal: Theme.color(hex: config["color"])     ?? Theme.batteryGreenLight,
+            warn:   Theme.color(hex: config["warnColor"]) ?? Theme.batteryYellowLight,
+            med:    Theme.color(hex: config["medColor"])  ?? Theme.batteryOrangeLight,
+            low:    Theme.color(hex: config["lowColor"])  ?? Theme.batteryRedLight
         )
-        return NanoBarViewBox(AnyView(BatteryWidgetView(colors: colors)))
+        let dark = (
+            normal: Theme.color(hex: config["colorDark"])     ?? Theme.batteryGreenDark,
+            warn:   Theme.color(hex: config["warnColorDark"]) ?? Theme.batteryYellowDark,
+            med:    Theme.color(hex: config["medColorDark"])  ?? Theme.batteryOrangeDark,
+            low:    Theme.color(hex: config["lowColorDark"])  ?? Theme.batteryRedDark
+        )
+        return NanoBarViewBox(AnyView(BatteryWidgetView(lightColors: light, darkColors: dark)))
     }
 }
 
@@ -146,9 +157,17 @@ public final class BatteryPlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSet
 
     public var displayName: String { "Battery" }
     public func settingsSchema() -> [SettingsField] {[
-        SettingsField(key: "color",     label: "Normal color",  type: .color, defaultValue: Theme.batteryGreenLight,  adaptiveColor: Theme.batteryGreen,  darkKey: "colorDark",     darkDefaultValue: Theme.batteryGreenDark),
-        SettingsField(key: "warnColor", label: "Warning color", type: .color, defaultValue: Theme.batteryYellowLight, adaptiveColor: Theme.batteryYellow, darkKey: "warnColorDark", darkDefaultValue: Theme.batteryYellowDark),
-        SettingsField(key: "medColor",  label: "Medium color",  type: .color, defaultValue: Theme.batteryOrangeLight, adaptiveColor: Theme.batteryOrange, darkKey: "medColorDark",  darkDefaultValue: Theme.batteryOrangeDark),
-        SettingsField(key: "lowColor",  label: "Low color",     type: .color, defaultValue: Theme.batteryRedLight,    adaptiveColor: Theme.batteryRed,    darkKey: "lowColorDark",  darkDefaultValue: Theme.batteryRedDark),
+        SettingsField(key: "color",     label: "Normal color",  type: .color,
+                      defaultValue: Theme.batteryGreenLight.toHex8()  ?? "",
+                      darkKey: "colorDark",     darkDefaultValue: Theme.batteryGreenDark.toHex8()  ?? ""),
+        SettingsField(key: "warnColor", label: "Warning color", type: .color,
+                      defaultValue: Theme.batteryYellowLight.toHex8() ?? "",
+                      darkKey: "warnColorDark", darkDefaultValue: Theme.batteryYellowDark.toHex8() ?? ""),
+        SettingsField(key: "medColor",  label: "Medium color",  type: .color,
+                      defaultValue: Theme.batteryOrangeLight.toHex8() ?? "",
+                      darkKey: "medColorDark",  darkDefaultValue: Theme.batteryOrangeDark.toHex8() ?? ""),
+        SettingsField(key: "lowColor",  label: "Low color",     type: .color,
+                      defaultValue: Theme.batteryRedLight.toHex8()    ?? "",
+                      darkKey: "lowColorDark",  darkDefaultValue: Theme.batteryRedDark.toHex8()    ?? ""),
     ]}
 }
