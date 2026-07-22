@@ -6,26 +6,14 @@ import UserNotifications
 
 public enum ConfigError: Error, LocalizedError, Sendable {
     case fileNotReadable(String)
-    case fileNotWritable(String)
     case parseError(String)
-    case bundleNotFound(path: String)
-    case invalidPrincipalClass(path: String)
-    case unknownWidgetID(String)
 
     public var errorDescription: String? {
         switch self {
         case .fileNotReadable(let path):
             return "Cannot read config file at \(path)"
-        case .fileNotWritable(let path):
-            return "Cannot write config file at \(path)"
         case .parseError(let msg):
             return "Config parse error: \(msg)"
-        case .bundleNotFound(let path):
-            return "Plugin bundle not found: \(path)"
-        case .invalidPrincipalClass(let path):
-            return "Plugin has no valid principal class: \(path)"
-        case .unknownWidgetID(let id):
-            return "Unknown widget ID in config: \"\(id)\""
         }
     }
 }
@@ -36,8 +24,7 @@ public enum ConfigError: Error, LocalizedError, Sendable {
 public final class ConfigLoader: ObservableObject {
     public static let shared = ConfigLoader()
 
-    @Published public private(set) var config    = NanoConfig.defaults
-    @Published public private(set) var lastError: ConfigError?
+    @Published public private(set) var config = NanoConfig.defaults
 
     /// Set by AppDelegate. Called on the main actor after every successful reload.
     public var onReload: (@MainActor () -> Void)?
@@ -50,9 +37,7 @@ public final class ConfigLoader: ObservableObject {
     private var dirWatchSource:  DispatchSourceFileSystemObject?
     private var fileWatchSource: DispatchSourceFileSystemObject?
     private var lastNotifiedError: String?
-
-    /// Pending debounced write tasks keyed by `"section.key"`.
-    private var pendingWrites: [String: DispatchWorkItem] = [:]
+    private var lastRaw: String?
 
     private init() {}
 
@@ -71,98 +56,28 @@ public final class ConfigLoader: ObservableObject {
     }
 
     /// Parse the config file. On success updates `config` and calls `onReload`.
-    /// On failure updates `lastError` and leaves `config` unchanged.
+    /// On failure reports the error and leaves `config` unchanged.
     public func reload() {
         guard let raw = try? String(contentsOf: configURL, encoding: .utf8) else {
             report(.fileNotReadable(configURL.path)); return
         }
+        // Watchers fire for unrelated directory writes and both halves of an atomic
+        // save — skip the decode + republish when the file content hasn't changed.
+        guard raw != lastRaw else { return }
         do {
             let decoded = try TOMLDecoder().decode(NanoConfig.self, from: raw)
-            config    = decoded
-            lastError = nil
+            lastRaw = raw
+            config  = decoded
             lastNotifiedError = nil
             onReload?()
         } catch {
+            lastRaw = raw
             report(.parseError(error.localizedDescription))
         }
     }
 
-    // MARK: - Write path
-
-    /// Patch a single key in the config file using a 300 ms debounce per `section+key`.
-    ///
-    /// - Parameters:
-    ///   - section: TOML section path, e.g. `"plugins.clock"`, `"bar"`, `"plugins.clock.pill"`.
-    ///   - key:     The key to update within that section.
-    ///   - value:   The new value. Use `.string` for plugin settings (always stored quoted).
-    ///              Use `.integer`/`.double`/`.bool` for bar/pill numeric and boolean fields.
-    public func write(section: String, key: String, value: TOMLValue) {
-        let dedupKey = "\(section).\(key)"
-        pendingWrites[dedupKey]?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.pendingWrites.removeValue(forKey: dedupKey)
-            self.flushWrite(section: section, key: key, value: value)
-        }
-        pendingWrites[dedupKey] = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
-    }
-
-    private func flushWrite(section: String, key: String, value: TOMLValue) {
-        let raw = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-        let patched = TOMLWriter.patch(raw: raw, section: section, key: key, value: value)
-        writeRaw(patched)
-    }
-
-    /// Remove a single key from a section in the config file, using the same 300 ms debounce
-    /// as `write`. If the key's value equals the schema default the caller should prefer this
-    /// over `write` so the config file stays clean of redundant entries.
-    ///
-    /// Cancels any pending write for the same `section+key` slot before scheduling the removal,
-    /// so a rapid write→reset sequence always lands in the correct final state.
-    public func removeKey(section: String, key: String) {
-        let dedupKey = "\(section).\(key)"
-        pendingWrites[dedupKey]?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.pendingWrites.removeValue(forKey: dedupKey)
-            let raw = (try? String(contentsOf: self.configURL, encoding: .utf8)) ?? ""
-            self.writeRaw(TOMLWriter.removeKey(raw: raw, section: section, key: key))
-        }
-        pendingWrites[dedupKey] = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
-    }
-
-    /// Remove a TOML section (header + all content lines) from the config file.
-    ///
-    /// The write is immediate (no debounce) — section removal is intentional and discrete.
-    /// Any pending debounced writes for keys within this section are cancelled first so
-    /// they cannot re-create the section after it is removed.
-    public func removeSection(_ section: String) {
-        let prefix = section + "."
-        for (key, item) in pendingWrites where key == section || key.hasPrefix(prefix) {
-            item.cancel()
-            pendingWrites.removeValue(forKey: key)
-        }
-        let raw = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-        writeRaw(TOMLWriter.removeSection(raw: raw, section: section))
-    }
-
-    /// Atomically write raw TOML content to the config file.
-    private func writeRaw(_ content: String) {
-        do {
-            let tmp = configURL.deletingLastPathComponent()
-                .appendingPathComponent(".config.toml.tmp")
-            try content.write(to: tmp, atomically: false, encoding: .utf8)
-            _ = try FileManager.default.replaceItemAt(configURL, withItemAt: tmp)
-        } catch {
-            report(.fileNotWritable(configURL.path))
-        }
-    }
-
-    /// Surface an error: update `lastError`, log to stderr, post a macOS notification.
+    /// Surface an error: log to stderr, post a macOS notification.
     public func report(_ error: ConfigError) {
-        lastError = error
         let msg = error.localizedDescription
         fputs("[NanoBar] \(msg)\n", stderr)
         // Deduplicate notifications for the same error message

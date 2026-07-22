@@ -19,47 +19,87 @@ public struct BarRootView: View {
     }
 
     private var cfg: NanoConfig { config.config }
-    private var bar: BarStyle    { BarStyle(cfg.bar) }
 
     public var body: some View {
+        // Derived once per body pass — style construction parses colors/strings.
+        let bar = BarStyle(cfg.bar)
+        let pos = cfg.bar.resolvedPosition
+        Group {
+            if pos == .top {
+                topLayout(bar: bar)
+            } else {
+                sidebarLayout(bar: bar, pos: pos)
+            }
+        }
+        .environment(\.monitorID, monitorID)
+        .environment(\.pillStyle, PillStyle(cfg.pill))
+        .environment(\.barPosition, pos)
+    }
+
+    // MARK: - Top bar layout
+
+    private func topLayout(bar: BarStyle) -> some View {
         VStack(spacing: 0) {
             Group {
-                if isBuiltIn { builtIn } else { external }
+                if isBuiltIn { builtIn(bar: bar) } else { external(bar: bar) }
             }
             .frame(minHeight: bar.minHeight)
-            .background(barBackground)
+            .background(barBackground(bar: bar, position: .top))
             .padding(bar.margin)
-            .environment(\.monitorID, monitorID)
-            .environment(\.pillStyle, PillStyle(cfg.pill))
-            .environment(\.barStyle, bar)
             Spacer(minLength: 0)
         }
     }
 
-    @ViewBuilder private var barBackground: some View {
+    // MARK: - Sidebar layout (left / right)
+
+    @ViewBuilder private func sidebarLayout(bar: BarStyle, pos: BarPosition) -> some View {
+        let allWidgets = cfg.widgets.left + cfg.widgets.center + cfg.widgets.right
+        HStack(spacing: 0) {
+            if pos == .right { Spacer(minLength: 0) }
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: Theme.itemGap) {
+                    zoneWidgets(allWidgets)
+                }
+                .padding(bar.padding)
+                Spacer(minLength: 0)
+            }
+            .frame(width: Theme.sidebarContainerWidth, alignment: .leading)
+            .background(barBackground(bar: bar, position: pos))
+            .padding(bar.margin)
+            if pos == .left { Spacer(minLength: 0) }
+        }
+    }
+
+    // MARK: - Bar background
+
+    @ViewBuilder private func barBackground(bar: BarStyle, position: BarPosition) -> some View {
         let shape = RoundedRectangle(cornerRadius: bar.cornerRadius, style: .continuous)
+        let shadowX: CGFloat = position == .left ? Theme.barShadowY : (position == .right ? -Theme.barShadowY : 0)
+        let shadowY: CGFloat = position == .top ? Theme.barShadowY : 0
         ZStack {
             switch bar.background {
-            case .none:                  Color.clear
-            case .blur:                  shape.fill(.regularMaterial)
-            case let .color(r, g, b, a): shape.fill(Color(red: r, green: g, blue: b, opacity: a))
+            case .none:              Color.clear
+            case .blur:              shape.fill(.regularMaterial)
+            case let .color(color):  shape.fill(color)
             }
             if bar.border {
                 shape.strokeBorder(bar.borderColor, lineWidth: bar.borderWidth)
             }
         }
         .shadow(color: bar.shadow ? .black.opacity(Theme.barShadowOpacity) : .clear,
-                radius: Theme.barShadowRadius, x: 0, y: Theme.barShadowY)
+                radius: Theme.barShadowRadius, x: shadowX, y: shadowY)
     }
 
     // MARK: - Widget dispatch
 
     @ViewBuilder
     private func widgetView(for id: String) -> some View {
-        if let view = WidgetRegistry.shared.view(for: id) {
-            view
+        switch id {
+        case "workspaces":
+            WorkspaceBarView(mode: cfg.workspaces.resolvedMode)
+        default:
+            EmptyView()  // Unknown IDs: silently skip.
         }
-        // Unknown IDs: silently skip (error reported by ConfigLoader at load time).
     }
 
     @ViewBuilder
@@ -71,7 +111,7 @@ public struct BarRootView: View {
 
     // MARK: - Built-in layout (notch avoidance)
 
-    private var builtIn: some View {
+    private func builtIn(bar: BarStyle) -> some View {
         HStack(spacing: 0) {
             HStack(spacing: Theme.itemGap) {
                 zoneWidgets(cfg.widgets.left)
@@ -106,7 +146,7 @@ public struct BarRootView: View {
 
     // MARK: - External layout (center widgets centered)
 
-    private var external: some View {
+    private func external(bar: BarStyle) -> some View {
         ZStack {
             zoneWidgets(cfg.widgets.center)
             HStack(spacing: Theme.itemGap) {

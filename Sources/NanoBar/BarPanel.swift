@@ -8,16 +8,21 @@ final class BarPanel: NSPanel {
     let associatedScreen: NSScreen
     private var menuBarVisible = false
     private var fullscreenHidden = false
+    private let barPosition: BarPosition
 
     init(screen: NSScreen, monitorID: Int) {
         self.associatedScreen = screen
-        let frame    = BarPanel.barFrame(for: screen)
+        let pos = ConfigLoader.shared.config.bar.resolvedPosition
+        self.barPosition = pos
+        let frame    = BarPanel.barFrame(for: screen, position: pos)
         let isBuiltIn = screen.localizedName.lowercased().contains("built-in")
         let regionStore = InteractiveRegionStore()
         let rootView = BarRootView(isBuiltIn: isBuiltIn, monitorID: monitorID)
             .environmentObject(ConfigLoader.shared)
             .onPreferenceChange(InteractiveRegionKey.self) { rects in
-                Task { @MainActor in
+                // Delivered on the main thread; fires per frame during pill
+                // animations — avoid allocating a Task per change.
+                MainActor.assumeIsolated {
                     regionStore.rects = rects
                 }
             }
@@ -51,10 +56,11 @@ final class BarPanel: NSPanel {
     }
 
     func adjustForMenuBar(visible: Bool) {
+        guard barPosition == .top else { return }
         guard visible != menuBarVisible else { return }
         menuBarVisible = visible
         guard !fullscreenHidden else { return }
-        var target = BarPanel.barFrame(for: associatedScreen)
+        var target = BarPanel.barFrame(for: associatedScreen, position: barPosition)
         if visible { target.origin.y = associatedScreen.frame.maxY }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Theme.menuBarAnimDuration
@@ -75,13 +81,31 @@ final class BarPanel: NSPanel {
         }
     }
 
-    static func barFrame(for screen: NSScreen) -> CGRect {
+    static func barFrame(for screen: NSScreen, position: BarPosition) -> CGRect {
         let sf = screen.frame
-        return CGRect(
-            x: sf.minX,
-            y: sf.maxY - Theme.barContainerHeight - Theme.shadowOverflow,
-            width:  sf.width,
-            height: Theme.barContainerHeight + Theme.shadowOverflow
-        )
+        let menuBarH = sf.maxY - screen.visibleFrame.maxY
+        switch position {
+        case .left:
+            return CGRect(
+                x: sf.minX,
+                y: sf.minY,
+                width:  Theme.sidebarContainerWidth + Theme.shadowOverflow,
+                height: sf.height - menuBarH
+            )
+        case .right:
+            return CGRect(
+                x: sf.maxX - Theme.sidebarContainerWidth - Theme.shadowOverflow,
+                y: sf.minY,
+                width:  Theme.sidebarContainerWidth + Theme.shadowOverflow,
+                height: sf.height - menuBarH
+            )
+        case .top:
+            return CGRect(
+                x: sf.minX,
+                y: sf.maxY - Theme.barContainerHeight - Theme.shadowOverflow,
+                width:  sf.width,
+                height: Theme.barContainerHeight + Theme.shadowOverflow
+            )
+        }
     }
 }

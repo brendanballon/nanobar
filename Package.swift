@@ -6,21 +6,11 @@ let package = Package(
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/LebJe/TOMLKit", from: "0.5.0"),
-        // Standalone package so the dylib is shared with external plugins at runtime.
-        .package(path: "NanoBarPluginAPI"),
     ],
     targets: [
-        .executableTarget(
-            name: "NowPlayingHelper",
-            path: "Sources/NowPlayingHelper",
-            swiftSettings: [.swiftLanguageMode(.v6)]
-        ),
         .testTarget(
             name: "MonitorsTests",
-            dependencies: [
-                "Monitors",
-                .product(name: "NanoBarPluginAPI", package: "NanoBarPluginAPI"),
-            ],
+            dependencies: ["Monitors"],
             path: "Tests/MonitorsTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -32,10 +22,7 @@ let package = Package(
         ),
         .target(
             name: "Widgets",
-            dependencies: [
-                "Monitors",
-                .product(name: "NanoBarPluginAPI", package: "NanoBarPluginAPI"),
-            ],
+            dependencies: ["Monitors"],
             path: "Sources/Widgets",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

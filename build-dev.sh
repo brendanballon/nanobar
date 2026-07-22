@@ -1,31 +1,14 @@
 #!/usr/bin/env bash
-# Builds all plugins and the main app, then links bundles into .build/debug/Plugins/
-# so the zero-config auto-discovery works during development.
+# Builds NanoBar in DEBUG mode and (re)starts it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-PLUGINS_DEST="$ROOT/.build/debug/Plugins"
 
-echo "── Building plugins ──────────────────────────────────────────────────────"
-for plugin_dir in "$ROOT/Plugins"/*/; do
-    plugin_name="$(basename "$plugin_dir")"
-    echo "  $plugin_name"
-    (cd "$plugin_dir" && bash build.sh > /dev/null)
-done
+echo "── NanoBar (debug) ──"
+(cd "$ROOT" && swift build 2>&1 | grep -E "error:|Build complete|warning:")
 
-echo "── Building NanoBar ──────────────────────────────────────────────────────"
-(cd "$ROOT" && swift build)
-
-echo "── Linking bundles into .build/debug/Plugins/ ────────────────────────────"
-mkdir -p "$PLUGINS_DEST"
-for plugin_dir in "$ROOT/Plugins"/*/; do
-    plugin_name="$(basename "$plugin_dir")"
-    bundle="$plugin_dir/$plugin_name.bundle"
-    if [ -d "$bundle" ]; then
-        ln -sfn "$bundle" "$PLUGINS_DEST/$plugin_name.bundle"
-        echo "  linked $plugin_name.bundle"
-    fi
-done
-
-echo "── Done ──────────────────────────────────────────────────────────────────"
-echo "Run: .build/debug/NanoBar"
+echo "── starting ──"
+pkill -x NanoBar 2>/dev/null || true
+sleep 0.3
+"$ROOT/.build/debug/NanoBar" 2>&1 | tee /tmp/nanobar-debug.log &
+echo "PID $!  |  log: /tmp/nanobar-debug.log"

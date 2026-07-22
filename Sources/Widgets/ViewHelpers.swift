@@ -1,32 +1,5 @@
+import Monitors
 import SwiftUI
-
-// MARK: - stableMinWidth
-
-public extension View {
-    /// Prevents the view from ever shrinking narrower than its widest rendered width.
-    /// Eliminates layout jumps when variable-length text updates.
-    func stableMinWidth() -> some View {
-        modifier(StableMinWidthModifier())
-    }
-}
-
-public struct StableMinWidthModifier: ViewModifier {
-    @State private var minWidth: CGFloat = 0
-
-    public init() {}
-
-    public func body(content: Content) -> some View {
-        content
-            .frame(minWidth: minWidth, alignment: .leading)
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { minWidth = max(minWidth, g.size.width) }
-                    .onChange(of: g.size.width) { _, w in
-                        if w > minWidth { minWidth = w }
-                    }
-            })
-    }
-}
 
 // MARK: - InteractiveRegion
 
@@ -62,5 +35,18 @@ public extension EnvironmentValues {
     var monitorID: Int {
         get { self[MonitorIDKey.self] }
         set { self[MonitorIDKey.self] = newValue }
+    }
+}
+
+// MARK: - BarPosition environment key
+
+private struct BarPositionKey: EnvironmentKey {
+    static let defaultValue: BarPosition = .top
+}
+
+public extension EnvironmentValues {
+    var barPosition: BarPosition {
+        get { self[BarPositionKey.self] }
+        set { self[BarPositionKey.self] = newValue }
     }
 }

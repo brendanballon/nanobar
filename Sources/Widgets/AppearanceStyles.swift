@@ -1,21 +1,17 @@
 import SwiftUI
 import Monitors
-// NanoBarPluginAPI re-exported via NanoPill.swift
 
-// MARK: - PillStyle (NanoConfig initialiser + default bootstrap)
+// MARK: - PillStyle (NanoConfig initialiser + default)
 
-// PillStyle itself lives in NanoBarPluginAPI so plugins can use it.
-// This extension adds the NanoConfig-backed initialiser and the bootstrap
-// that makes NanoConfig.PillConfig() the single source of truth for the default.
+// This extension adds the NanoConfig-backed initialiser and the default,
+// making NanoConfig.PillConfig() the single source of truth.
 extension PillStyle {
-    /// Call once at app startup (before any views render) to make PillStyle.default
-    /// derive from NanoConfig.PillConfig() — the single source of truth.
-    /// See AppDelegate.applicationDidFinishLaunching.
-    public static func bootstrapDefault() {
-        PillStyle.default = PillStyle(NanoConfig.PillConfig())
-    }
+    /// Default style derived from the config schema defaults. Only reached in
+    /// SwiftUI previews or isolated tests — BarRootView always injects the
+    /// config-derived style into the environment.
+    public static let `default` = PillStyle(NanoConfig.PillConfig())
 
-    init(_ config: NanoConfig.PillConfig) {
+    public init(_ config: NanoConfig.PillConfig) {
         let variant: Variant = {
             switch config.style {
             case "blur":  return .blur
@@ -33,12 +29,15 @@ extension PillStyle {
             }
         }
 
-        let mapBlurMaterial: (String) -> BlurMaterial = {
-            switch $0 {
-            case "thin":      return .thin
-            case "ultraThin": return .ultraThin
-            default:          return .regular
-            }
+        let mapBlur: (NanoConfig.BlurConfig) -> BlurAppearance = { blur in
+            let material: BlurAppearance.Material = {
+                switch blur.material {
+                case "thin":      return .thin
+                case "ultraThin": return .ultraThin
+                default:          return .regular
+                }
+            }()
+            return BlurAppearance(material: material, specular: blur.specular, shadow: blur.shadow)
         }
 
         let g = config.liquidGlass
@@ -50,15 +49,11 @@ extension PillStyle {
             border:       config.border.isEnabled,
             borderWidth:  CGFloat(config.border.width),
             borderColor:  config.border.customColor.flatMap { Theme.color(hex: $0) },
-            glassDefault: GlassStateConfig(effect: mapEffect(g.defaultEffect)),
-            glassHover:   GlassStateConfig(effect: mapEffect(g.hoverEffect)),
-            glassToggled: GlassStateConfig(effect: mapEffect(g.toggledEffect)),
-            blurMaterial:      mapBlurMaterial(g.blur.material),
-            blurSpecular:      g.blur.specular,
-            blurShadow:        g.blur.shadow,
-            blurStyleMaterial: mapBlurMaterial(config.blur.material),
-            blurStyleSpecular: config.blur.specular,
-            blurStyleShadow:   config.blur.shadow,
+            glassDefault: mapEffect(g.defaultEffect),
+            glassHover:   mapEffect(g.hoverEffect),
+            glassToggled: mapEffect(g.toggledEffect),
+            glassFallbackBlur: mapBlur(g.blur),
+            blur:              mapBlur(config.blur),
             solidColor:        Theme.color(hex: config.solidColor),
             solidShadow:       config.solidShadow
         )
@@ -72,7 +67,7 @@ public struct BarStyle: Sendable {
     public enum Background: Sendable {
         case none
         case blur
-        case color(Double, Double, Double, Double)  // r, g, b, a  (0–1)
+        case color(Color)
     }
     public let background:   Background
     public let minHeight:    CGFloat
@@ -96,33 +91,10 @@ public struct BarStyle: Sendable {
         let raw = config.background.trimmingCharacters(in: .whitespaces)
         if raw == "blur" {
             background = .blur
-        } else if raw.lowercased().hasPrefix("color:") {
-            let hex = String(raw.dropFirst(6))
-            background = BarStyle.parseHexColor(hex) ?? .none
+        } else if raw.lowercased().hasPrefix("color:"), let color = Theme.color(hex: String(raw.dropFirst(6))) {
+            background = .color(color)
         } else {
             background = .none
-        }
-    }
-
-    public static let `default` = BarStyle(NanoConfig.BarConfig())
-
-    private static func parseHexColor(_ hex: String) -> Background? {
-        let h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        // Support #RRGGBB (alpha=1) and #RRGGBBAA
-        let count = h.count
-        guard count == 6 || count == 8,
-              let value = UInt64(h, radix: 16) else { return nil }
-        if count == 6 {
-            let r = Double((value >> 16) & 0xFF) / 255
-            let g = Double((value >>  8) & 0xFF) / 255
-            let b = Double( value        & 0xFF) / 255
-            return .color(r, g, b, 1)
-        } else {
-            let r = Double((value >> 24) & 0xFF) / 255
-            let g = Double((value >> 16) & 0xFF) / 255
-            let b = Double((value >>  8) & 0xFF) / 255
-            let a = Double( value        & 0xFF) / 255
-            return .color(r, g, b, a)
         }
     }
 }
@@ -133,16 +105,3 @@ private extension SideInsets {
                    bottom: CGFloat(bottom), trailing: CGFloat(right))
     }
 }
-
-private struct BarStyleKey: EnvironmentKey {
-    static let defaultValue = BarStyle.default
-}
-
-public extension EnvironmentValues {
-    var barStyle: BarStyle {
-        get { self[BarStyleKey.self] }
-        set { self[BarStyleKey.self] = newValue }
-    }
-}
-
-// monitorID environment key lives in NanoBarPluginAPI (re-exported via NanoPill.swift).

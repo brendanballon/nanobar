@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build NanoBar + all plugins in release mode and stage artifacts into dist/.
+# Build NanoBar in release mode and stage artifacts into dist/.
 # Output: dist/ directory + nanobar-<version>-arm64.tar.gz
 set -euo pipefail
 
@@ -12,36 +12,13 @@ echo "==> Building NanoBar ${VERSION}"
 
 # Clean staging dir
 rm -rf "$DIST"
-mkdir -p "$DIST/libexec/Plugins" "$DIST/bin"
+mkdir -p "$DIST/libexec" "$DIST/bin"
 
-# ── Main package (NanoBar + NowPlayingHelper) ──────────────────────────────
 cd "$REPO_ROOT"
 swift build -c release 2>&1 | grep -E "error:|Build complete|warning: "
 
 cp .build/release/NanoBar "$DIST/libexec/NanoBar"
-cp .build/release/NowPlayingHelper "$DIST/libexec/NowPlayingHelper"
-cp .build/release/libNanoBarPluginAPI.dylib "$DIST/libexec/libNanoBarPluginAPI.dylib"
-
-# NowPlayingHelper must carry the controlcenter identifier for MediaRemote access
-codesign --sign - \
-  --identifier "com.apple.controlcenter.NowPlayingHelper" \
-  --force "$DIST/libexec/NowPlayingHelper"
-
-echo "  NanoBar + NowPlayingHelper built and signed"
-
-# ── Plugins ───────────────────────────────────────────────────────────────
-for plugin_dir in "$REPO_ROOT/Plugins"/*/; do
-    plugin_name="$(basename "$plugin_dir")"
-    echo "==> Building $plugin_name"
-    (cd "$plugin_dir" && bash build.sh 2>&1 | grep -E "error:|Build complete|warning: ")
-    bundle="$plugin_dir/${plugin_name}.bundle"
-    if [ -d "$bundle" ]; then
-        cp -R "$bundle" "$DIST/libexec/Plugins/"
-        echo "  Copied ${plugin_name}.bundle"
-    else
-        echo "  WARNING: expected bundle not found at $bundle" >&2
-    fi
-done
+echo "  NanoBar built"
 
 # ── Wrapper script ─────────────────────────────────────────────────────────
 cat > "$DIST/bin/nanobar" << 'WRAPPER'

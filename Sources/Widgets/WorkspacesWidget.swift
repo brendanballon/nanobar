@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
+import Monitors
 import SwiftUI
-import NanoBarPluginAPI
 
 // MARK: - AeroSpace client
 
@@ -20,6 +20,24 @@ private final class AeroSpaceClient: @unchecked Sendable {
     private static let binaryURL: URL? = binaryPaths
         .map { URL(fileURLWithPath: $0) }
         .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+
+    // The list formats are load-bearing: parseWorkspaceList/parseWindowList are
+    // written against exactly these column layouts.
+    func listWorkspaces() async throws -> String {
+        try await run(args: ["list-workspaces", "--all", "--format", "%{workspace} %{monitor-id} %{workspace-is-focused}"])
+    }
+
+    func listWindows() async throws -> String {
+        try await run(args: ["list-windows", "--all", "--format", "%{window-id} %{workspace} %{app-name}"])
+    }
+
+    func focusWorkspace(_ id: String) {
+        Task { try? await run(args: ["workspace", id]) }
+    }
+
+    func focusWindow(_ windowID: Int) {
+        Task { try? await run(args: ["focus", "--window-id", "\(windowID)"]) }
+    }
 
     func run(args: [String]) async throws -> String {
         guard let url = Self.binaryURL else { throw CocoaError(.fileNoSuchFile) }
@@ -54,15 +72,46 @@ private final class AeroSpaceClient: @unchecked Sendable {
 // MARK: - Data types
 
 private struct WorkspaceState: Sendable, Equatable {
+    /// Max app icons shown per workspace pill.
+    static let maxWindowIcons = 5
+
     let id: String
     let isFocused: Bool
     let windows: [WindowInfo]
     let monitorID: Int
+
+    init(id: String, isFocused: Bool, windows: [WindowInfo], monitorID: Int) {
+        self.id = id
+        self.isFocused = isFocused
+        self.windows = Array(windows.prefix(Self.maxWindowIcons))
+        self.monitorID = monitorID
+    }
 }
 
 private struct WindowInfo: Sendable, Equatable {
     let windowID: Int
     let appName: String
+}
+
+// MARK: - App icon cache
+
+/// Caches NSWorkspace icon lookups by app name — the running-applications scan
+/// is linear and would otherwise re-run on every pill render.
+@MainActor
+private enum AppIconCache {
+    private static var icons: [String: NSImage] = [:]
+
+    static func icon(for appName: String) -> NSImage? {
+        if let cached = icons[appName] { return cached }
+        let icon = NSWorkspace.shared.runningApplications
+            .first { $0.localizedName == appName }?.icon
+        if let icon { icons[appName] = icon }
+        return icon
+    }
+
+    static func evict(_ appName: String) {
+        icons[appName] = nil
+    }
 }
 
 // MARK: - Live state
@@ -90,7 +139,10 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         ) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   let name = app.localizedName else { return }
-            MainActor.assumeIsolated { self?.removeApp(named: name) }
+            MainActor.assumeIsolated {
+                AppIconCache.evict(name)
+                self?.removeApp(named: name)
+            }
         }
     }
 
@@ -154,7 +206,7 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
             guard parts.count == 3 else { await fetchAndNotify(); return }
             lastWorkspaceChangeTime = Date()
             applyFocusChange(prev: parts[1], next: parts[2])
-            await fetchWindowsOnly()
+            await fetchWindowsOnly(animated: false)
         case "F":
             guard Date().timeIntervalSince(lastWorkspaceChangeTime) > 0.15 else { return }
             await fetchWindowsOnly()
@@ -200,10 +252,8 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
 
     // MARK: - Single-subprocess partial fetches
 
-    private func fetchWindowsOnly() async {
-        guard let winOut = try? await AeroSpaceClient.shared.run(args: [
-            "list-windows", "--all", "--format", "%{window-id} %{workspace} %{app-name}"
-        ]) else { return }
+    private func fetchWindowsOnly(animated: Bool = true) async {
+        guard let winOut = try? await AeroSpaceClient.shared.listWindows() else { return }
 
         let wsWindows = parseWindowList(winOut)
         let knownIDs  = Set(cachedStates.map { $0.id })
@@ -214,7 +264,7 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
                 WorkspaceState(
                     id: ws.id,
                     isFocused: ws.isFocused,
-                    windows: Array((wsWindows[ws.id] ?? []).prefix(5)),
+                    windows: wsWindows[ws.id] ?? [],
                     monitorID: ws.monitorID
                 )
             }
@@ -223,28 +273,20 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         for wsID in wsWindows.keys where !knownIDs.contains(wsID) {
             updated.append(WorkspaceState(
                 id: wsID, isFocused: false,
-                windows: Array(wsWindows[wsID]!.prefix(5)),
+                windows: wsWindows[wsID]!,
                 monitorID: fallbackMonitorID
             ))
         }
         updated.sort { $0.id < $1.id }
-        updateAndPublish(updated)
+        updateAndPublish(updated, animated: animated)
     }
 
     private func fetchWorkspacesOnly() async {
-        guard let wsOut = try? await AeroSpaceClient.shared.run(args: [
-            "list-workspaces", "--all", "--format", "%{workspace} %{monitor-id} %{workspace-is-focused}"
-        ]) else { return }
+        guard let wsOut = try? await AeroSpaceClient.shared.listWorkspaces() else { return }
 
         let (wsMonitor, wsFocused) = parseWorkspaceList(wsOut)
         let windowsByWS = Dictionary(uniqueKeysWithValues: cachedStates.map { ($0.id, $0.windows) })
-        let updated = wsMonitor.keys.sorted().compactMap { wsID -> WorkspaceState? in
-            let windows = windowsByWS[wsID] ?? []
-            let focused = wsFocused[wsID] ?? false
-            guard !windows.isEmpty || focused else { return nil }
-            return WorkspaceState(id: wsID, isFocused: focused, windows: windows, monitorID: wsMonitor[wsID]!)
-        }
-        updateAndPublish(updated)
+        updateAndPublish(buildStates(monitor: wsMonitor, focused: wsFocused, windowsByWS: windowsByWS))
     }
 
     // MARK: - Full fetch (startup + fallback)
@@ -255,29 +297,29 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
 
     private func fetchAll() async -> [WorkspaceState] {
         do {
-            async let wsTask  = AeroSpaceClient.shared.run(args: [
-                "list-workspaces", "--all", "--format", "%{workspace} %{monitor-id} %{workspace-is-focused}"
-            ])
-            async let winTask = AeroSpaceClient.shared.run(args: [
-                "list-windows", "--all", "--format", "%{window-id} %{workspace} %{app-name}"
-            ])
+            async let wsTask  = AeroSpaceClient.shared.listWorkspaces()
+            async let winTask = AeroSpaceClient.shared.listWindows()
             let (wsOut, winOut)        = try await (wsTask, winTask)
             let (wsMonitor, wsFocused) = parseWorkspaceList(wsOut)
-            let wsWindows              = parseWindowList(winOut)
-            return wsMonitor.keys.sorted().compactMap { wsID -> WorkspaceState? in
-                let windows = wsWindows[wsID] ?? []
-                let focused = wsFocused[wsID] ?? false
-                guard !windows.isEmpty || focused else { return nil }
-                return WorkspaceState(
-                    id: wsID, isFocused: focused,
-                    windows: Array(windows.prefix(5)),
-                    monitorID: wsMonitor[wsID]!
-                )
-            }
+            return buildStates(monitor: wsMonitor, focused: wsFocused, windowsByWS: parseWindowList(winOut))
         } catch { return [] }
     }
 
-    // MARK: - Parsing helpers
+    // MARK: - Parsing / assembly helpers
+
+    /// Assembles sorted workspace states, dropping empty unfocused workspaces.
+    private func buildStates(
+        monitor: [String: Int],
+        focused: [String: Bool],
+        windowsByWS: [String: [WindowInfo]]
+    ) -> [WorkspaceState] {
+        monitor.keys.sorted().compactMap { wsID in
+            let windows = windowsByWS[wsID] ?? []
+            let isFocused = focused[wsID] ?? false
+            guard !windows.isEmpty || isFocused else { return nil }
+            return WorkspaceState(id: wsID, isFocused: isFocused, windows: windows, monitorID: monitor[wsID]!)
+        }
+    }
 
     private func parseWindowList(_ output: String) -> [String: [WindowInfo]] {
         var wsWindows: [String: [WindowInfo]] = [:]
@@ -307,28 +349,25 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         return (wsMonitor, wsFocused)
     }
 
-    private func updateAndPublish(_ newStates: [WorkspaceState]) {
+    private func updateAndPublish(_ newStates: [WorkspaceState], animated: Bool = true) {
         guard newStates != cachedStates else { return }
         cachedStates = newStates
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+        if animated {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
+                states = newStates
+            }
+        } else {
             states = newStates
         }
     }
 }
 
-// MARK: - Workspace display mode
-
-private enum WorkspaceMode: String {
-    case labelsOnly
-    case activeIcons
-    case clampAndExpand
-}
-
 // MARK: - Root view
 
-private struct WorkspaceBarView: View {
+struct WorkspaceBarView: View {
     @ObservedObject private var state = WorkspacesState.shared
     @Environment(\.monitorID) private var monitorID
+    @Environment(\.barPosition) private var barPosition
 
     let mode: WorkspaceMode
     @State private var hoveredID: String?
@@ -338,122 +377,115 @@ private struct WorkspaceBarView: View {
     }
 
     var body: some View {
-        HStack(spacing: Theme.itemGap) {
-            ForEach(filtered, id: \.id) { ws in
-                switch mode {
-                case .labelsOnly:
-                    LabelOnlyPill(state: ws)
-                case .activeIcons:
-                    ActiveIconsPill(state: ws)
-                case .clampAndExpand:
-                    ClampExpandPill(state: ws, hoveredID: $hoveredID)
-                }
-            }
+        if barPosition == .top {
+            HStack(spacing: Theme.itemGap) { pills }
+        } else {
+            VStack(spacing: Theme.itemGap) { pills }
+        }
+    }
+
+    @ViewBuilder private var pills: some View {
+        ForEach(filtered, id: \.id) { ws in
+            WorkspacePill(
+                state: ws,
+                // Sidebar always uses the expanding layout regardless of mode.
+                mode: barPosition == .top ? mode : .clampAndExpand,
+                vertical: barPosition != .top,
+                hoveredID: $hoveredID
+            )
         }
     }
 }
 
-// MARK: - Option 1: Labels Only
+// MARK: - Workspace pill (all modes)
 
-private struct LabelOnlyPill: View {
+private struct WorkspacePill: View {
     let state: WorkspaceState
-    @State private var isHovered = false
-
-    var body: some View {
-        Text(state.id)
-            .font(.system(size: Theme.labelSize, weight: .semibold))
-            .foregroundStyle(state.isFocused ? Theme.labelColor : Theme.grey)
-            .nanoPill(focused: state.isFocused, hovered: isHovered)
-            .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
-            .onTapGesture {
-                Task { try? await AeroSpaceClient.shared.run(args: ["workspace", state.id]) }
-            }
-    }
-}
-
-// MARK: - Option 2: Active Icons
-
-private struct ActiveIconsPill: View {
-    let state: WorkspaceState
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(state.id)
-                .font(.system(size: Theme.labelSize, weight: .semibold))
-                .foregroundStyle(state.isFocused ? Theme.labelColor : Theme.grey)
-            if state.isFocused {
-                ForEach(state.windows.prefix(5), id: \.windowID) { window in
-                    AppIconView(window: window)
-                }
-            }
-        }
-        .nanoPill(focused: state.isFocused, hovered: isHovered)
-        .onHover { h in withAnimation(.easeInOut(duration: 0.15)) { isHovered = h } }
-        .onTapGesture {
-            Task { try? await AeroSpaceClient.shared.run(args: ["workspace", state.id]) }
-        }
-    }
-}
-
-// MARK: - Option 3: Clamp & Expand
-
-private struct ClampExpandPill: View {
-    let state: WorkspaceState
+    let mode: WorkspaceMode
+    let vertical: Bool
     @Binding var hoveredID: String?
 
     private var isHovered: Bool { hoveredID == state.id }
 
-    private var visibleIconCount: Int {
-        if isHovered || state.isFocused { return min(state.windows.count, 5) }
-        return 0
+    private var showsIcons: Bool {
+        switch mode {
+        case .labelsOnly:     return false
+        case .activeIcons:    return state.isFocused
+        case .clampAndExpand: return isHovered || state.isFocused
+        }
+    }
+
+    private var hoverAnimation: Animation {
+        mode == .clampAndExpand ? Theme.springLabelHover : .easeInOut(duration: 0.15)
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(state.id)
-                .font(.system(size: Theme.labelSize, weight: .semibold))
-                .foregroundStyle(state.isFocused ? Theme.labelColor : Theme.grey)
-                .fixedSize()
+        layout
+            .nanoPill(focused: state.isFocused, hovered: isHovered, fixedHeight: !vertical)
+            .onHover { hovering in
+                withAnimation(hoverAnimation) {
+                    hoveredID = hovering ? state.id : nil
+                }
+            }
+            .onTapGesture {
+                AeroSpaceClient.shared.focusWorkspace(state.id)
+            }
+    }
 
-            if visibleIconCount > 0 {
-                HStack(spacing: 4) {
-                    ForEach(state.windows.prefix(visibleIconCount), id: \.windowID) { window in
-                        AppIconView(window: window)
-                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+    @ViewBuilder private var layout: some View {
+        if vertical {
+            VStack(spacing: 4) {
+                label
+                if showsIcons, !state.windows.isEmpty {
+                    VStack(spacing: 6) {
+                        icons(transition: .scale(scale: 0.4, anchor: .top).combined(with: .opacity))
+                    }
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                label
+                switch mode {
+                case .labelsOnly:
+                    EmptyView()
+                case .activeIcons:
+                    if showsIcons {
+                        icons(transition: .opacity)
+                    }
+                case .clampAndExpand:
+                    if showsIcons, !state.windows.isEmpty {
+                        HStack(spacing: 4) {
+                            icons(transition: .scale(scale: 0.4).combined(with: .opacity))
+                        }
                     }
                 }
             }
         }
-        .nanoPill(focused: state.isFocused, hovered: isHovered)
-        .onHover { hovering in
-            withAnimation(Theme.springLabelHover) {
-                hoveredID = hovering ? state.id : nil
-            }
-        }
-        .onTapGesture {
-            Task { try? await AeroSpaceClient.shared.run(args: ["workspace", state.id]) }
+    }
+
+    private var label: some View {
+        Text(state.id)
+            .font(.system(size: Theme.labelSize, weight: .semibold))
+            .foregroundStyle(state.isFocused ? Theme.labelColor : Theme.grey)
+            .fixedSize()
+    }
+
+    private func icons(transition: AnyTransition) -> some View {
+        ForEach(state.windows, id: \.windowID) { window in
+            AppIconView(window: window)
+                .transition(transition)
         }
     }
 }
 
-// MARK: - App icon (shared by all modes)
+// MARK: - App icon
 
 private struct AppIconView: View {
     let window: WindowInfo
     @State private var isHovered = false
-    @State private var icon: NSImage?
-
-    init(window: WindowInfo) {
-        self.window = window
-        _icon = State(initialValue:
-            NSWorkspace.shared.runningApplications
-                .first { $0.localizedName == window.appName }?.icon
-        )
-    }
 
     var body: some View {
-        if let icon {
+        if let icon = AppIconCache.icon(for: window.appName) {
             Image(nsImage: icon)
                 .resizable()
                 .frame(width: Theme.appIconSize, height: Theme.appIconSize)
@@ -462,47 +494,8 @@ private struct AppIconView: View {
                 .interactiveRegion()
                 .onHover { isHovered = $0 }
                 .onTapGesture {
-                    Task {
-                        try? await AeroSpaceClient.shared.run(args: ["focus", "--window-id", "\(window.windowID)"])
-                    }
+                    AeroSpaceClient.shared.focusWindow(window.windowID)
                 }
         }
     }
-}
-
-// MARK: - Factory
-
-private final class AeroSpaceWidgetFactory: NSObject, NanoBarWidgetFactory {
-    private let config: [String: String]
-    init(config: [String: String]) { self.config = config }
-
-    var widgetID: String { "workspaces" }
-
-    @MainActor func makeViewBox() -> NanoBarViewBox {
-        let mode = WorkspaceMode(rawValue: config["mode"]!) ?? .clampAndExpand
-        return NanoBarViewBox(AnyView(WorkspaceBarView(mode: mode)))
-    }
-}
-
-// MARK: - Entry point
-
-@objc(AeroSpacePlugin)
-public final class AeroSpacePlugin: NSObject, NanoBarPluginEntry, NanoBarPluginSettingsProvider {
-    public var pluginID: String { "workspaces" }
-    @MainActor public func registerWidgets(with registry: any NanoBarWidgetRegistry, config: [String: String]) {
-        registry.register(AeroSpaceWidgetFactory(config: resolvedSettings(config)))
-    }
-
-    public var displayName: String { "Workspaces" }
-    public func settingsSchema() -> [SettingsField] {[
-        SettingsField(
-            key: "mode", label: "Display mode",
-            type: .picker(options: [
-                PickerOption(value: "labelsOnly",     label: "Labels only"),
-                PickerOption(value: "activeIcons",    label: "Active icons"),
-                PickerOption(value: "clampAndExpand", label: "Clamp & expand"),
-            ]),
-            defaultValue: "clampAndExpand"
-        ),
-    ]}
 }

@@ -13,10 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        PillStyle.bootstrapDefault()
         ConfigLoader.shared.loadOrCreate()
         applyTheme(ConfigLoader.shared.config.resolvedTheme)
-        ConfigLoader.shared.onReload = { [weak self] in self?.hotReload() }
+        // Appearance/widget changes propagate via @Published config — only the
+        // theme needs explicit re-application on reload.
+        ConfigLoader.shared.onReload = { [weak self] in
+            self?.applyTheme(ConfigLoader.shared.config.resolvedTheme)
+        }
         reinit()
 
         NotificationCenter.default.addObserver(
@@ -30,26 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Reinit
 
-    /// Full reinit: tears down panels and widget registry, then rebuilds from current config.
+    /// Full reinit: tears down panels, then rebuilds from current config.
     /// Called on first launch and on screen configuration changes.
     private func reinit() {
         barPanels.forEach { $0.close() }
         barPanels.removeAll()
-
-        let config = ConfigLoader.shared.config
-        WidgetRegistry.shared.clear()
-        PluginLoader.shared.loadPlugins(config: config, registry: WidgetRegistry.shared)
-
         setupBars()
-    }
-
-    /// Hot-reload: re-registers plugins with updated settings without rebuilding bar panels.
-    /// BarRootView updates appearance (pill style, bar style, tint) automatically via
-    /// @EnvironmentObject — no panel teardown needed for config changes.
-    private func hotReload() {
-        let config = ConfigLoader.shared.config
-        applyTheme(config.resolvedTheme)
-        PluginLoader.shared.loadPlugins(config: config, registry: WidgetRegistry.shared)
     }
 
     private func applyTheme(_ theme: AppTheme) {
@@ -72,9 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func screensChanged() {
-        barPanels.forEach { $0.close() }
-        barPanels.removeAll()
-        setupBars()
+        reinit()
     }
 
     // MARK: - Auto-hide menu bar detection via Carbon
@@ -147,15 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.image = NSImage(systemSymbolName: "square.grid.3x1.below.line.grid.1x2", accessibilityDescription: "NanoBar")
         item.button?.image?.isTemplate = true
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit NanoBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
-    }
-
-    @objc private func openSettings() {
-        SettingsWindowController.shared.open()
     }
 
     nonisolated private static func screenHasFullscreenWindow(sf: CGRect, primaryH: CGFloat) -> Bool {

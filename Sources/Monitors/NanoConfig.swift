@@ -10,6 +10,22 @@ public enum AppTheme: String, CaseIterable, Sendable {
     case dark
 }
 
+// MARK: - BarPosition
+
+/// Where the bar appears on screen. Persisted as `position` under `[bar]`.
+public enum BarPosition: String, Sendable {
+    case top, left, right
+}
+
+// MARK: - WorkspaceMode
+
+/// Workspaces widget display mode. Persisted as `mode` under `[workspaces]`.
+public enum WorkspaceMode: String, Sendable {
+    case labelsOnly
+    case activeIcons
+    case clampAndExpand
+}
+
 // MARK: - Config model
 
 /// The full NanoBar configuration decoded from ~/.config/nanobar/config.toml.
@@ -25,15 +41,32 @@ public struct NanoConfig: Decodable, Sendable {
         private enum CodingKeys: String, CodingKey { case theme }
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? "system"
+            theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? Self().theme
         }
     }
 
     public struct Widgets: Decodable, Sendable {
         public var left:   [String] = ["workspaces"]
-        public var center: [String] = ["now_playing"]
-        public var right:  [String] = ["keyboard", "volume", "battery", "clock"]
+        public var center: [String] = []
+        public var right:  [String] = []
         public init() {}
+    }
+
+    public struct WorkspacesConfig: Decodable, Sendable {
+        /// "labelsOnly" | "activeIcons" | "clampAndExpand"
+        public var mode: String = "clampAndExpand"
+        public init() {}
+
+        /// Parsed `mode` string. Falls back to `.clampAndExpand` for unrecognized values.
+        public var resolvedMode: WorkspaceMode {
+            WorkspaceMode(rawValue: mode) ?? .clampAndExpand
+        }
+
+        private enum CodingKeys: String, CodingKey { case mode }
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? Self().mode
+        }
     }
 
     public struct BarConfig: Decodable, Sendable {
@@ -42,6 +75,8 @@ public struct NanoConfig: Decodable, Sendable {
         public var minHeight:    Double      = 30
         public var cornerRadius: Double      = 0
         public var shadow:       Bool        = false
+        /// "top" | "left" | "right" — where the bar/sidebar appears on screen.
+        public var position:     String      = "top"
         /// Gap between screen edge and bar background.
         /// Scalar (`margin = 12`) or inline table (`margin = { all = 12, top = 4 }`).
         public var margin:       SideInsets  = SideInsets()
@@ -52,18 +87,25 @@ public struct NanoConfig: Decodable, Sendable {
         public var border:       BorderConfig = .disabled
         public init() {}
 
+        /// Parsed `position` string. Falls back to `.top` for unrecognized values.
+        public var resolvedPosition: BarPosition {
+            BarPosition(rawValue: position) ?? .top
+        }
+
         private enum CodingKeys: String, CodingKey {
-            case background, minHeight, cornerRadius, shadow, margin, padding, border
+            case background, minHeight, cornerRadius, shadow, position, margin, padding, border
         }
         public init(from decoder: any Decoder) throws {
+            let d = Self()
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            background   = try c.decodeIfPresent(String.self,       forKey: .background) ?? "none"
-            minHeight    = try c.decodeDoubleOrInt(forKey: .minHeight)                   ?? 30
-            cornerRadius = try c.decodeDoubleOrInt(forKey: .cornerRadius)                ?? 0
-            shadow       = try c.decodeIfPresent(Bool.self,         forKey: .shadow)     ?? false
-            margin       = try c.decodeIfPresent(SideInsets.self,   forKey: .margin)     ?? SideInsets()
-            padding      = try c.decodeIfPresent(SideInsets.self,   forKey: .padding)    ?? SideInsets(all: 8)
-            border       = try c.decodeIfPresent(BorderConfig.self, forKey: .border)     ?? .disabled
+            background   = try c.decodeIfPresent(String.self,       forKey: .background) ?? d.background
+            minHeight    = try c.decodeDoubleOrInt(forKey: .minHeight)                   ?? d.minHeight
+            cornerRadius = try c.decodeDoubleOrInt(forKey: .cornerRadius)                ?? d.cornerRadius
+            shadow       = try c.decodeIfPresent(Bool.self,         forKey: .shadow)     ?? d.shadow
+            position     = try c.decodeIfPresent(String.self,       forKey: .position)   ?? d.position
+            margin       = try c.decodeIfPresent(SideInsets.self,   forKey: .margin)     ?? d.margin
+            padding      = try c.decodeIfPresent(SideInsets.self,   forKey: .padding)    ?? d.padding
+            border       = try c.decodeIfPresent(BorderConfig.self, forKey: .border)     ?? d.border
         }
     }
 
@@ -88,15 +130,16 @@ public struct NanoConfig: Decodable, Sendable {
             case style, height, cornerRadius, border, liquidGlass, blur, solidColor, solidShadow
         }
         public init(from decoder: any Decoder) throws {
-            let c    = try decoder.container(keyedBy: CodingKeys.self)
-            style        = try c.decodeIfPresent(String.self,       forKey: .style)       ?? "liquidGlass"
-            height       = try c.decodeDoubleOrInt(forKey: .height)                       ?? 30
-            cornerRadius = try c.decodeDoubleOrInt(forKey: .cornerRadius)                 ?? 15
-            border       = try c.decodeIfPresent(BorderConfig.self, forKey: .border)      ?? .auto
-            liquidGlass  = try c.decodeIfPresent(GlassConfig.self,  forKey: .liquidGlass) ?? .init()
-            blur         = try c.decodeIfPresent(BlurConfig.self,   forKey: .blur)        ?? .init()
-            solidColor   = try c.decodeIfPresent(String.self,       forKey: .solidColor)  ?? "#1C1C1ECC"
-            solidShadow  = try c.decodeIfPresent(Bool.self,         forKey: .solidShadow) ?? false
+            let d = Self()
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            style        = try c.decodeIfPresent(String.self,       forKey: .style)       ?? d.style
+            height       = try c.decodeDoubleOrInt(forKey: .height)                       ?? d.height
+            cornerRadius = try c.decodeDoubleOrInt(forKey: .cornerRadius)                 ?? d.cornerRadius
+            border       = try c.decodeIfPresent(BorderConfig.self, forKey: .border)      ?? d.border
+            liquidGlass  = try c.decodeIfPresent(GlassConfig.self,  forKey: .liquidGlass) ?? d.liquidGlass
+            blur         = try c.decodeIfPresent(BlurConfig.self,   forKey: .blur)        ?? d.blur
+            solidColor   = try c.decodeIfPresent(String.self,       forKey: .solidColor)  ?? d.solidColor
+            solidShadow  = try c.decodeIfPresent(Bool.self,         forKey: .solidShadow) ?? d.solidShadow
         }
     }
 
@@ -117,11 +160,12 @@ public struct NanoConfig: Decodable, Sendable {
             case defaultEffect, hoverEffect, toggledEffect, blur
         }
         public init(from decoder: any Decoder) throws {
-            let c        = try decoder.container(keyedBy: CodingKeys.self)
-            defaultEffect = try c.decodeIfPresent(String.self,     forKey: .defaultEffect) ?? "clear"
-            hoverEffect   = try c.decodeIfPresent(String.self,     forKey: .hoverEffect)   ?? "regular"
-            toggledEffect = try c.decodeIfPresent(String.self,     forKey: .toggledEffect) ?? "regular"
-            blur          = try c.decodeIfPresent(BlurConfig.self,  forKey: .blur)          ?? .init()
+            let d = Self()
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            defaultEffect = try c.decodeIfPresent(String.self,     forKey: .defaultEffect) ?? d.defaultEffect
+            hoverEffect   = try c.decodeIfPresent(String.self,     forKey: .hoverEffect)   ?? d.hoverEffect
+            toggledEffect = try c.decodeIfPresent(String.self,     forKey: .toggledEffect) ?? d.toggledEffect
+            blur          = try c.decodeIfPresent(BlurConfig.self,  forKey: .blur)          ?? d.blur
         }
     }
 
@@ -139,22 +183,21 @@ public struct NanoConfig: Decodable, Sendable {
 
         private enum CodingKeys: String, CodingKey { case material, specular, shadow }
         public init(from decoder: any Decoder) throws {
-            let c    = try decoder.container(keyedBy: CodingKeys.self)
-            material = try c.decodeIfPresent(String.self, forKey: .material) ?? "regular"
-            specular = try c.decodeIfPresent(Bool.self,   forKey: .specular) ?? true
-            shadow   = try c.decodeIfPresent(Bool.self,   forKey: .shadow)   ?? true
+            let d = Self()
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            material = try c.decodeIfPresent(String.self, forKey: .material) ?? d.material
+            specular = try c.decodeIfPresent(Bool.self,   forKey: .specular) ?? d.specular
+            shadow   = try c.decodeIfPresent(Bool.self,   forKey: .shadow)   ?? d.shadow
         }
     }
 
     // MARK: Properties
 
-    public var app:     AppConfig  = .init()
-    public var widgets: Widgets    = .init()
-    public var bar:     BarConfig  = .init()
-    public var pill:    PillConfig = .init()
-
-    /// One entry per `[plugins.<id>]` section.
-    public var plugins: [String: PluginEntry] = [:]
+    public var app:        AppConfig        = .init()
+    public var widgets:    Widgets          = .init()
+    public var bar:        BarConfig        = .init()
+    public var pill:       PillConfig       = .init()
+    public var workspaces: WorkspacesConfig = .init()
 
     /// Parsed `app.theme` string. Falls back to `.system` for unrecognized values.
     public var resolvedTheme: AppTheme {
@@ -170,8 +213,13 @@ public struct NanoConfig: Decodable, Sendable {
     public static let defaultTOML = """
         [widgets]
         left   = ["workspaces"]
-        center = ["now_playing"]
-        right  = ["keyboard", "volume", "battery", "clock"]
+        center = []
+        right  = []
+
+        # ─── Workspaces widget (AeroSpace) ────────────────────────────────────────────
+
+        # [workspaces]
+        # mode = "clampAndExpand"  # labelsOnly | activeIcons | clampAndExpand
 
         # ─── Bar appearance ───────────────────────────────────────────────────────────
         # Uncomment and edit any key to override its default value.
@@ -213,57 +261,24 @@ public struct NanoConfig: Decodable, Sendable {
         # material = "regular"   # regular | thin | ultraThin
         # specular = true        # white gradient overlay
         # shadow   = true        # macOS 26 glass manages its own shadow
-
-        # ─── Standard plugin settings (optional overrides) ────────────────────────────
-        # Standard plugins are auto-loaded from the Plugins/ directory — no bundle
-        # path needed. Add a section only to override defaults.
-
-        # [plugins.clock]
-        # format = "EEE dd MMM HH:mm"
-        # color  = "#FF7EB6"
-
-        # [plugins.battery]
-        # color     = "#B5EAD7"
-        # warnColor = "#FFD1A8"
-        # medColor  = "#FEFAC1"
-        # lowColor  = "#FFB3BF"
-
-        # [plugins.volume]
-        # color = "#AEC6CF"
-
-        # [plugins.keyboard]
-        # color = "#DDB6F2"
-
-        # [plugins.workspaces]
-        # mode = "clampAndExpand"  # labelsOnly | activeIcons | clampAndExpand
-
-        # [plugins.now_playing]
-        # activeColor = "#B5EAD7"
-
-        # ─── Third-party plugins ──────────────────────────────────────────────────────
-        # Custom plugins require an explicit bundle path.
-        #
-        # [plugins.myplugin]
-        # bundle = "/path/to/MyPlugin.bundle"
-        # color  = "#AEC6CF"
         """
 
     // MARK: Decodable
 
     // Manual CodingKeys to map TOML structure to Swift model.
     private enum CodingKeys: String, CodingKey {
-        case app, widgets, bar, pill, plugins
+        case app, widgets, bar, pill, workspaces
     }
 
     public init() {}
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        app     = try container.decodeIfPresent(AppConfig.self, forKey: .app)   ?? .init()
-        widgets = try container.decodeIfPresent(Widgets.self, forKey: .widgets) ?? .init()
-        bar     = try container.decodeIfPresent(BarConfig.self, forKey: .bar)   ?? .init()
-        pill    = try container.decodeIfPresent(PillConfig.self, forKey: .pill) ?? .init()
-        plugins = try container.decodeIfPresent([String: PluginEntry].self, forKey: .plugins) ?? [:]
+        app        = try container.decodeIfPresent(AppConfig.self, forKey: .app)               ?? .init()
+        widgets    = try container.decodeIfPresent(Widgets.self, forKey: .widgets)             ?? .init()
+        bar        = try container.decodeIfPresent(BarConfig.self, forKey: .bar)               ?? .init()
+        pill       = try container.decodeIfPresent(PillConfig.self, forKey: .pill)             ?? .init()
+        workspaces = try container.decodeIfPresent(WorkspacesConfig.self, forKey: .workspaces) ?? .init()
     }
 }
 
@@ -335,46 +350,6 @@ public enum BorderConfig: Decodable, Sendable, Equatable {
         let width = try c.decodeDoubleOrInt(forKey: .width) ?? 0.75
         let color = try c.decodeIfPresent(String.self, forKey: .color) ?? BorderConfig.defaultColor
         self = .custom(width: width, color: color)
-    }
-}
-
-// MARK: - PluginEntry
-
-/// One `[plugins.<id>]` section: widget settings, optional pill override, optional bundle path.
-///
-/// All string keys other than `pill` and `bundle` go into `settings`.
-/// ```toml
-/// [plugins.clock]
-/// format = "HH:mm"
-/// color  = "#FF7EB6"
-///
-/// [plugins.clock.pill]
-/// cornerRadius = 20
-/// border       = { color = "#FF7EB6" }
-/// ```
-public struct PluginEntry: Decodable, Sendable {
-    public var settings: [String: String]    = [:]
-    public var pill:     NanoConfig.PillConfig? = nil
-    public var bundle:   String?             = nil
-    public init() {}
-
-    private struct AnyKey: CodingKey {
-        var stringValue: String
-        var intValue: Int? { nil }
-        init(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { nil }
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: AnyKey.self)
-        for key in c.allKeys {
-            switch key.stringValue {
-            case "bundle": bundle = try? c.decode(String.self,             forKey: key)
-            case "pill":   pill   = try? c.decode(NanoConfig.PillConfig.self, forKey: key)
-            default:
-                if let s = try? c.decode(String.self, forKey: key) { settings[key.stringValue] = s }
-            }
-        }
     }
 }
 
