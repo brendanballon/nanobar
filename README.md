@@ -45,87 +45,83 @@ Logs (service): `/tmp/nanobar.log` and `/tmp/nanobar.err`.
 
 ## Configuration
 
-Config lives at `~/.config/nanobar/config.toml` and is created automatically on first launch. The file is watched — edits apply live, no restart needed.
+Zero-config first: NanoBar runs on sensible defaults with no configuration at all. To customize, edit `~/.config/nanobar/config` — a plain `key = value` file (a fully-commented reference is written on first launch). The file is watched: edits apply live, no restart needed.
 
-```toml
-[widgets]
-left   = ["workspaces"]
-center = []
-right  = []
+```
+theme = dark
+bar-position = left
+workspaces-mode = labelsOnly
 ```
 
-That's all you need to get started. Everything else is optional.
+Lines starting with `#` are comments; trailing ` # …` comments are stripped (leading-`#` hex colors are kept).
 
 ### Workspaces widget
 
-```toml
-[workspaces]
-mode = "clampAndExpand"   # labelsOnly | activeIcons | clampAndExpand
+```
+workspaces-mode = expandOnHoverAndActive
 ```
 
-- `labelsOnly` — workspace names only
-- `activeIcons` — app icons shown on the focused workspace
-- `clampAndExpand` — icons on the focused workspace, others expand on hover
+When a workspace pill expands to show its app icons:
 
-### App settings
+- `expanded` — every workspace always shows its icons
+- `collapsed` — labels only, never any icons
+- `expandOnHover` — icons appear while the pill is hovered
+- `expandOnActive` — the focused workspace shows its icons
+- `expandOnHoverAndActive` — icons on hover or on the focused workspace (default)
 
-```toml
-[app]
-theme = "system"   # system | light | dark
+### App
+
+```
+theme = system   # system | light | dark
 ```
 
-### Bar appearance
+### Bar
 
-```toml
-[bar]
-background   = "none"    # none | blur | color:#RRGGBBAA
-minHeight    = 30
-cornerRadius = 0
-shadow       = false
-position     = "top"     # top | left | right
-margin       = 0         # gap between screen edge and bar
-padding      = 8         # gap between bar edge and pill widgets
-border       = false
+```
+bar-position = top          # top | left | right
+bar-background = none       # none | blur | color:#RRGGBBAA
+bar-blur-material = regular # regular | thin | ultraThin (blur background)
+bar-min-height = 30
+bar-corner-radius = 0
+bar-shadow = false
+bar-margin = 0            # gap between screen edge and bar
+bar-padding = 8           # gap between bar edge and pills
+bar-border = false
+bar-border-width = 1.0
+bar-border-color = #FFFFFF59
 ```
 
-`margin` and `padding` accept a scalar (all sides) or a per-side table:
+`bar-margin` and `bar-padding` set all sides; add `-top`/`-right`/`-bottom`/`-left` suffixes for per-side overrides:
 
-```toml
-margin  = { all = 6, top = 4 }
-padding = { all = 8, left = 16 }
+```
+bar-padding = 8
+bar-padding-left = 16
 ```
 
-### Pill appearance
+### Pill
 
-```toml
-[pill]
-style        = "liquidGlass"   # liquidGlass | blur | solid | none
-height       = 30
-cornerRadius = 15
-border       = true            # false | true | { width = 0.75, color = "#FFFFFF47" }
+```
+pill-style = blur              # liquidGlass | blur | solid | none
+pill-height = 30
+pill-min-width = 30
+pill-corner-radius = 15
+pill-border = true
+pill-border-width = 0.75
+pill-border-color = #FFFFFF47  # unset = adaptive
 
-[pill.liquidGlass]
-# Glass effect per interaction state: "regular" | "clear" | "identity"
-defaultEffect = "clear"
-hoverEffect   = "regular"
-toggledEffect = "regular"
+# Glass effect per interaction state (liquidGlass style):
+pill-glass-default = clear     # regular | clear | identity
+pill-glass-hover = regular
+pill-glass-toggled = regular
 
-[pill.liquidGlass.blur]
-# Pre-macOS 26 fallback — ignored on macOS 26+ (glass handles itself).
-material = "regular"   # regular | thin | ultraThin
-specular = true
-shadow   = true
+# Blur appearance — blur style, and pre-macOS 26 fallback for liquidGlass:
+pill-blur-material = regular   # regular | thin | ultraThin
+pill-blur-specular = true      # white gradient overlay
+pill-blur-shadow = false
 
-[pill.blur]
-# Standalone blur style (vibrancy, works on all macOS 15+ versions).
-material = "regular"   # regular | thin | ultraThin
-specular = true
-shadow   = false
-
-[pill.solid]
-# Opaque pill. solidColor is an #RRGGBBAA hex string.
-# solidColor = "#1C1C1ECC"
-# solidShadow = false
+# Solid style — color is an #RRGGBBAA hex string:
+pill-solid-color = #1C1C1ECC
+pill-solid-shadow = false
 ```
 
 ---

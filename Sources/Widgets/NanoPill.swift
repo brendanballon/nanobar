@@ -12,11 +12,29 @@ public enum GlassVariant: Sendable, Equatable {
 
 // MARK: - BlurAppearance
 
-/// One blur parameterization: material + specular overlay + drop shadow.
-/// Used both for the standalone `.blur` variant and the pre-macOS 26
-/// liquidGlass fallback.
+/// Blur appearance: material + specular overlay + drop shadow.
+/// Used by the `.blur` variant and as the pre-macOS 26 liquidGlass fallback.
 public struct BlurAppearance: Sendable, Equatable {
-    public enum Material: Sendable, Equatable { case regular, thin, ultraThin }
+    public enum Material: Sendable, Equatable {
+        case regular, thin, ultraThin
+
+        /// Maps a config string ("regular" | "thin" | "ultraThin"); unknown → .regular.
+        public init(configValue: String) {
+            switch configValue {
+            case "thin":      self = .thin
+            case "ultraThin": self = .ultraThin
+            default:          self = .regular
+            }
+        }
+
+        public var swiftUIMaterial: SwiftUI.Material {
+            switch self {
+            case .thin:      return .thinMaterial
+            case .ultraThin: return .ultraThinMaterial
+            case .regular:   return .regularMaterial
+            }
+        }
+    }
 
     public let material: Material
     public let specular: Bool   // white gradient overlay
@@ -38,6 +56,7 @@ public struct PillStyle: Sendable, Equatable {
 
     public let variant:       Variant
     public let height:        CGFloat
+    public let minWidth:      CGFloat
     public let cornerRadius:  CGFloat
     public let border:        Bool
     public let borderWidth:   CGFloat
@@ -45,39 +64,38 @@ public struct PillStyle: Sendable, Equatable {
     public let glassDefault:  GlassVariant
     public let glassHover:    GlassVariant
     public let glassToggled:  GlassVariant
-    public let glassFallbackBlur: BlurAppearance  // pre-26 fallback for liquidGlass
-    public let blur:              BlurAppearance  // standalone .blur variant
-    public let solidColor:        Color?          // fill color for .solid variant; nil = system default
-    public let solidShadow:       Bool            // drop shadow for .solid variant
+    public let blur:          BlurAppearance  // .blur variant + pre-26 liquidGlass fallback
+    public let solidColor:    Color?          // fill color for .solid variant; nil = system default
+    public let solidShadow:   Bool            // drop shadow for .solid variant
 
     public init(
-        variant:           Variant,
-        height:            CGFloat,
-        cornerRadius:      CGFloat,
-        border:            Bool,
-        borderWidth:       CGFloat,
-        borderColor:       Color?,
-        glassDefault:      GlassVariant,
-        glassHover:        GlassVariant,
-        glassToggled:      GlassVariant,
-        glassFallbackBlur: BlurAppearance = BlurAppearance(shadow: true),
-        blur:              BlurAppearance = BlurAppearance(),
-        solidColor:        Color? = nil,
-        solidShadow:       Bool   = false
+        variant:      Variant,
+        height:       CGFloat,
+        minWidth:     CGFloat = 30,
+        cornerRadius: CGFloat,
+        border:       Bool,
+        borderWidth:  CGFloat,
+        borderColor:  Color?,
+        glassDefault: GlassVariant,
+        glassHover:   GlassVariant,
+        glassToggled: GlassVariant,
+        blur:         BlurAppearance = BlurAppearance(),
+        solidColor:   Color? = nil,
+        solidShadow:  Bool   = false
     ) {
-        self.variant           = variant
-        self.height            = height
-        self.cornerRadius      = cornerRadius
-        self.border            = border
-        self.borderWidth       = borderWidth
-        self.borderColor       = borderColor
-        self.glassDefault      = glassDefault
-        self.glassHover        = glassHover
-        self.glassToggled      = glassToggled
-        self.glassFallbackBlur = glassFallbackBlur
-        self.blur              = blur
-        self.solidColor        = solidColor
-        self.solidShadow       = solidShadow
+        self.variant      = variant
+        self.height       = height
+        self.minWidth     = minWidth
+        self.cornerRadius = cornerRadius
+        self.border       = border
+        self.borderWidth  = borderWidth
+        self.borderColor  = borderColor
+        self.glassDefault = glassDefault
+        self.glassHover   = glassHover
+        self.glassToggled = glassToggled
+        self.blur         = blur
+        self.solidColor   = solidColor
+        self.solidShadow  = solidShadow
     }
 }
 
@@ -128,6 +146,7 @@ public struct NanoPillModifier: ViewModifier {
             .foregroundStyle(.primary)
             .padding(.leading,  iconPadLeft)
             .padding(.trailing, labelPadRight)
+            .frame(minWidth: pillStyle.minWidth)
         backgrounded(
             fixedHeight
                 ? AnyView(padded.frame(height: pillStyle.height))
@@ -196,23 +215,16 @@ public struct NanoPillModifier: ViewModifier {
         case .solid:
             backgroundedSolid(content, shape: shape)
         case .liquidGlass:
-            backgroundedMaterial(content, shape: shape, blur: pillStyle.glassFallbackBlur)
+            backgroundedMaterial(content, shape: shape, blur: pillStyle.blur)
         }
     }
 
     @ViewBuilder
     private func backgroundedMaterial<V: View>(_ content: V, shape: RoundedRectangle, blur: BlurAppearance) -> some View {
-        let mat: Material = {
-            switch blur.material {
-            case .thin:      return .thinMaterial
-            case .ultraThin: return .ultraThinMaterial
-            case .regular:   return .regularMaterial
-            }
-        }()
         content
             .background {
                 ZStack {
-                    shape.fill(mat)
+                    shape.fill(blur.material.swiftUIMaterial)
                     if blur.specular {
                         shape.fill(
                             LinearGradient(

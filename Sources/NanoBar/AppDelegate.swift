@@ -9,16 +9,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var fullscreenObservers: [Any] = []
     private var fullscreenCheckWork: DispatchWorkItem?
     private var statusItem: NSStatusItem?
+    private var barPosition: BarPosition = .top
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         ConfigLoader.shared.loadOrCreate()
         applyTheme(ConfigLoader.shared.config.resolvedTheme)
-        // Appearance/widget changes propagate via @Published config — only the
-        // theme needs explicit re-application on reload.
+        barPosition = ConfigLoader.shared.config.bar.resolvedPosition
+        // Appearance/widget changes propagate via @Published config. The theme
+        // needs explicit re-application, and a position change needs a panel
+        // rebuild — the NSPanel frame is derived from the position at init.
         ConfigLoader.shared.onReload = { [weak self] in
-            self?.applyTheme(ConfigLoader.shared.config.resolvedTheme)
+            guard let self else { return }
+            let config = ConfigLoader.shared.config
+            self.applyTheme(config.resolvedTheme)
+            let position = config.bar.resolvedPosition
+            if position != self.barPosition {
+                self.barPosition = position
+                self.reinit()
+            }
         }
         reinit()
 
@@ -106,11 +116,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
     }
 
-    private func scheduleFullscreenCheck() {
+    private func scheduleFullscreenCheck(after delay: TimeInterval = 0.6) {
         fullscreenCheckWork?.cancel()
         let item = DispatchWorkItem { [weak self] in self?.checkFullscreenState() }
         fullscreenCheckWork = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     private func checkFullscreenState() {
@@ -124,6 +134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }.value
             for (panel, hidden) in results { panel.setFullscreenHidden(hidden) }
+            // The exit-fullscreen notifications fire at the start of the space
+            // transition — a check can run while the departing window still covers
+            // the screen, leaving the bar hidden with no further event to revive
+            // it. While any panel is hidden, keep re-checking until it isn't.
+            if results.contains(where: { $0.1 }) {
+                scheduleFullscreenCheck(after: 2.0)
+            }
         }
     }
 

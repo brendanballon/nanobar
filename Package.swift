@@ -4,9 +4,6 @@ import PackageDescription
 let package = Package(
     name: "NanoBar",
     platforms: [.macOS(.v15)],
-    dependencies: [
-        .package(url: "https://github.com/LebJe/TOMLKit", from: "0.5.0"),
-    ],
     targets: [
         .testTarget(
             name: "MonitorsTests",
@@ -28,7 +25,6 @@ let package = Package(
         ),
         .target(
             name: "Monitors",
-            dependencies: [.product(name: "TOMLKit", package: "TOMLKit")],
             path: "Sources/Monitors",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

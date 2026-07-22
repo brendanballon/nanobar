@@ -29,33 +29,22 @@ extension PillStyle {
             }
         }
 
-        let mapBlur: (NanoConfig.BlurConfig) -> BlurAppearance = { blur in
-            let material: BlurAppearance.Material = {
-                switch blur.material {
-                case "thin":      return .thin
-                case "ultraThin": return .ultraThin
-                default:          return .regular
-                }
-            }()
-            return BlurAppearance(material: material, specular: blur.specular, shadow: blur.shadow)
-        }
-
-        let g = config.liquidGlass
-
         self.init(
             variant:      variant,
             height:       CGFloat(config.height),
+            minWidth:     CGFloat(config.minWidth),
             cornerRadius: CGFloat(config.cornerRadius),
-            border:       config.border.isEnabled,
+            border:       config.border.enabled,
             borderWidth:  CGFloat(config.border.width),
-            borderColor:  config.border.customColor.flatMap { Theme.color(hex: $0) },
-            glassDefault: mapEffect(g.defaultEffect),
-            glassHover:   mapEffect(g.hoverEffect),
-            glassToggled: mapEffect(g.toggledEffect),
-            glassFallbackBlur: mapBlur(g.blur),
-            blur:              mapBlur(config.blur),
-            solidColor:        Theme.color(hex: config.solidColor),
-            solidShadow:       config.solidShadow
+            borderColor:  config.border.color.flatMap { Theme.color(hex: $0) },
+            glassDefault: mapEffect(config.glassDefault),
+            glassHover:   mapEffect(config.glassHover),
+            glassToggled: mapEffect(config.glassToggled),
+            blur:         BlurAppearance(material: .init(configValue: config.blurMaterial),
+                                         specular: config.blurSpecular,
+                                         shadow:   config.blurShadow),
+            solidColor:   Theme.color(hex: config.solidColor),
+            solidShadow:  config.solidShadow
         )
     }
 }
@@ -70,6 +59,7 @@ public struct BarStyle: Sendable {
         case color(Color)
     }
     public let background:   Background
+    public let blurMaterial: BlurAppearance.Material
     public let minHeight:    CGFloat
     public let cornerRadius: CGFloat
     public let shadow:       Bool
@@ -80,12 +70,13 @@ public struct BarStyle: Sendable {
     public let borderColor:  Color
 
     public init(_ config: NanoConfig.BarConfig) {
+        blurMaterial = BlurAppearance.Material(configValue: config.blurMaterial)
         minHeight    = CGFloat(config.minHeight)
         cornerRadius = CGFloat(config.cornerRadius)
         shadow       = config.shadow
-        border       = config.border.isEnabled
+        border       = config.border.enabled
         borderWidth  = CGFloat(config.border.width)
-        borderColor  = Theme.color(hex: config.border.customColor ?? BorderConfig.defaultColor) ?? Color.white.opacity(0.35)
+        borderColor  = Theme.color(hex: config.border.color ?? BorderConfig.defaultColor) ?? Color.white.opacity(0.35)
         margin  = config.margin.asEdgeInsets
         padding = config.padding.asEdgeInsets
         let raw = config.background.trimmingCharacters(in: .whitespaces)

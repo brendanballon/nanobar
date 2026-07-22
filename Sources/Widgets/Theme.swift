@@ -11,7 +11,6 @@ public enum Theme {
     public static let itemGap: CGFloat = 4
     public static let appIconSize: CGFloat = 16
     public static let labelSize: CGFloat = 12
-    public static let notchWidth: CGFloat = 160
     /// Extra window height below the bar for shadow rendering; content stays pinned to top.
     public static let shadowOverflow: CGFloat = 14
 

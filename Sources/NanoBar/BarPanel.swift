@@ -9,15 +9,18 @@ final class BarPanel: NSPanel {
     private var menuBarVisible = false
     private var fullscreenHidden = false
     private let barPosition: BarPosition
+    /// True when the system menu bar auto-hides (no strip reserved in
+    /// visibleFrame). Only then does the top bar swap places with the menu bar.
+    private let menuBarAutoHides: Bool
 
     init(screen: NSScreen, monitorID: Int) {
         self.associatedScreen = screen
         let pos = ConfigLoader.shared.config.bar.resolvedPosition
         self.barPosition = pos
+        self.menuBarAutoHides = screen.frame.maxY == screen.visibleFrame.maxY
         let frame    = BarPanel.barFrame(for: screen, position: pos)
-        let isBuiltIn = screen.localizedName.lowercased().contains("built-in")
         let regionStore = InteractiveRegionStore()
-        let rootView = BarRootView(isBuiltIn: isBuiltIn, monitorID: monitorID)
+        let rootView = BarRootView(monitorID: monitorID)
             .environmentObject(ConfigLoader.shared)
             .onPreferenceChange(InteractiveRegionKey.self) { rects in
                 // Delivered on the main thread; fires per frame during pill
@@ -56,7 +59,11 @@ final class BarPanel: NSPanel {
     }
 
     func adjustForMenuBar(visible: Bool) {
-        guard barPosition == .top else { return }
+        // With a persistently visible menu bar the top bar sits below it and
+        // never swaps places with it — reacting to the global menu-bar
+        // shown/hidden events (they also fire on fullscreen transitions) would
+        // latch the bar hidden with no event to ever revive it.
+        guard barPosition == .top, menuBarAutoHides else { return }
         guard visible != menuBarVisible else { return }
         menuBarVisible = visible
         guard !fullscreenHidden else { return }
@@ -100,9 +107,11 @@ final class BarPanel: NSPanel {
                 height: sf.height - menuBarH
             )
         case .top:
+            // menuBarH is 0 when the menu bar auto-hides (bar takes its place);
+            // otherwise the bar sits below the persistent menu bar.
             return CGRect(
                 x: sf.minX,
-                y: sf.maxY - Theme.barContainerHeight - Theme.shadowOverflow,
+                y: sf.maxY - menuBarH - Theme.barContainerHeight - Theme.shadowOverflow,
                 width:  sf.width,
                 height: Theme.barContainerHeight + Theme.shadowOverflow
             )

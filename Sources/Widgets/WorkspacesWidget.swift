@@ -388,8 +388,7 @@ struct WorkspaceBarView: View {
         ForEach(filtered, id: \.id) { ws in
             WorkspacePill(
                 state: ws,
-                // Sidebar always uses the expanding layout regardless of mode.
-                mode: barPosition == .top ? mode : .clampAndExpand,
+                mode: mode,
                 vertical: barPosition != .top,
                 hoveredID: $hoveredID
             )
@@ -409,14 +408,20 @@ private struct WorkspacePill: View {
 
     private var showsIcons: Bool {
         switch mode {
-        case .labelsOnly:     return false
-        case .activeIcons:    return state.isFocused
-        case .clampAndExpand: return isHovered || state.isFocused
+        case .expanded:               return true
+        case .collapsed:              return false
+        case .expandOnHover:          return isHovered
+        case .expandOnActive:         return state.isFocused
+        case .expandOnHoverAndActive: return isHovered || state.isFocused
         }
     }
 
+    private var expandsOnHover: Bool {
+        mode == .expandOnHover || mode == .expandOnHoverAndActive
+    }
+
     private var hoverAnimation: Animation {
-        mode == .clampAndExpand ? Theme.springLabelHover : .easeInOut(duration: 0.15)
+        expandsOnHover ? Theme.springLabelHover : .easeInOut(duration: 0.15)
     }
 
     var body: some View {
@@ -445,18 +450,9 @@ private struct WorkspacePill: View {
         } else {
             HStack(spacing: 6) {
                 label
-                switch mode {
-                case .labelsOnly:
-                    EmptyView()
-                case .activeIcons:
-                    if showsIcons {
-                        icons(transition: .opacity)
-                    }
-                case .clampAndExpand:
-                    if showsIcons, !state.windows.isEmpty {
-                        HStack(spacing: 4) {
-                            icons(transition: .scale(scale: 0.4).combined(with: .opacity))
-                        }
+                if showsIcons, !state.windows.isEmpty {
+                    HStack(spacing: 4) {
+                        icons(transition: .scale(scale: 0.4).combined(with: .opacity))
                     }
                 }
             }

@@ -1,20 +1,11 @@
 import SwiftUI
 import Monitors
 
-// Reports whether center widgets fit on the right side of the built-in bar.
-private struct CenterFitsRightKey: PreferenceKey {
-    static let defaultValue = true
-    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = nextValue() }
-}
-
 public struct BarRootView: View {
     @EnvironmentObject private var config: ConfigLoader
-    let isBuiltIn: Bool
     let monitorID: Int
-    @State private var centerFitsRight = true
 
-    public init(isBuiltIn: Bool, monitorID: Int) {
-        self.isBuiltIn = isBuiltIn
+    public init(monitorID: Int) {
         self.monitorID = monitorID
     }
 
@@ -36,13 +27,19 @@ public struct BarRootView: View {
         .environment(\.barPosition, pos)
     }
 
+    private var workspaces: some View {
+        WorkspaceBarView(mode: cfg.workspaces.resolvedMode)
+    }
+
     // MARK: - Top bar layout
 
     private func topLayout(bar: BarStyle) -> some View {
         VStack(spacing: 0) {
-            Group {
-                if isBuiltIn { builtIn(bar: bar) } else { external(bar: bar) }
+            HStack(spacing: Theme.itemGap) {
+                workspaces
+                Spacer(minLength: 0)
             }
+            .padding(bar.padding)
             .frame(minHeight: bar.minHeight)
             .background(barBackground(bar: bar, position: .top))
             .padding(bar.margin)
@@ -52,13 +49,12 @@ public struct BarRootView: View {
 
     // MARK: - Sidebar layout (left / right)
 
-    @ViewBuilder private func sidebarLayout(bar: BarStyle, pos: BarPosition) -> some View {
-        let allWidgets = cfg.widgets.left + cfg.widgets.center + cfg.widgets.right
+    private func sidebarLayout(bar: BarStyle, pos: BarPosition) -> some View {
         HStack(spacing: 0) {
             if pos == .right { Spacer(minLength: 0) }
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: Theme.itemGap) {
-                    zoneWidgets(allWidgets)
+                    workspaces
                 }
                 .padding(bar.padding)
                 Spacer(minLength: 0)
@@ -79,7 +75,7 @@ public struct BarRootView: View {
         ZStack {
             switch bar.background {
             case .none:              Color.clear
-            case .blur:              shape.fill(.regularMaterial)
+            case .blur:              shape.fill(bar.blurMaterial.swiftUIMaterial)
             case let .color(color):  shape.fill(color)
             }
             if bar.border {
@@ -88,76 +84,5 @@ public struct BarRootView: View {
         }
         .shadow(color: bar.shadow ? .black.opacity(Theme.barShadowOpacity) : .clear,
                 radius: Theme.barShadowRadius, x: shadowX, y: shadowY)
-    }
-
-    // MARK: - Widget dispatch
-
-    @ViewBuilder
-    private func widgetView(for id: String) -> some View {
-        switch id {
-        case "workspaces":
-            WorkspaceBarView(mode: cfg.workspaces.resolvedMode)
-        default:
-            EmptyView()  // Unknown IDs: silently skip.
-        }
-    }
-
-    @ViewBuilder
-    private func zoneWidgets(_ ids: [String]) -> some View {
-        ForEach(ids, id: \.self) { id in
-            widgetView(for: id)
-        }
-    }
-
-    // MARK: - Built-in layout (notch avoidance)
-
-    private func builtIn(bar: BarStyle) -> some View {
-        HStack(spacing: 0) {
-            HStack(spacing: Theme.itemGap) {
-                zoneWidgets(cfg.widgets.left)
-                Spacer(minLength: 0)
-                if !centerFitsRight {
-                    zoneWidgets(cfg.widgets.center)
-                }
-            }
-            .padding(bar.padding)
-
-            Spacer().frame(width: Theme.notchWidth)
-
-            HStack(spacing: Theme.itemGap) {
-                Spacer(minLength: 0)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Theme.itemGap) {
-                        zoneWidgets(cfg.widgets.center)
-                        zoneWidgets(cfg.widgets.right)
-                    }
-                    .preference(key: CenterFitsRightKey.self, value: true)
-
-                    HStack(spacing: Theme.itemGap) {
-                        zoneWidgets(cfg.widgets.right)
-                    }
-                    .preference(key: CenterFitsRightKey.self, value: false)
-                }
-            }
-            .padding(bar.padding)
-            .onPreferenceChange(CenterFitsRightKey.self) { centerFitsRight = $0 }
-        }
-    }
-
-    // MARK: - External layout (center widgets centered)
-
-    private func external(bar: BarStyle) -> some View {
-        ZStack {
-            zoneWidgets(cfg.widgets.center)
-            HStack(spacing: Theme.itemGap) {
-                zoneWidgets(cfg.widgets.left)
-                Spacer()
-            }
-            HStack(spacing: Theme.itemGap) {
-                Spacer()
-                zoneWidgets(cfg.widgets.right)
-            }
-        }
-        .padding(bar.padding)
     }
 }
