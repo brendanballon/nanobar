@@ -30,12 +30,6 @@ jobs:
       - name: Build release
         run: bash build-release.sh "${{ inputs.version }}"
 
-      - name: Compute SHA256
-        id: sha
-        run: |
-          sha=$(shasum -a 256 "nanobar-${{ inputs.version }}-arm64.tar.gz" | awk '{print $1}')
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -44,6 +38,16 @@ jobs:
             --title "NanoBar v${{ inputs.version }}" \
             --generate-notes \
             "nanobar-${{ inputs.version }}-arm64.tar.gz"
+
+      # The formula builds from source, so it needs the SHA256 of the source
+      # tarball GitHub generates for the tag — not the prebuilt binary tarball.
+      - name: Compute source tarball SHA256
+        id: sha
+        run: |
+          curl -fsSL -o source.tar.gz \
+            "https://github.com/${{ github.repository }}/archive/refs/tags/v${{ inputs.version }}.tar.gz"
+          sha=$(shasum -a 256 source.tar.gz | awk '{print $1}')
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Trigger formula update
         env:

@@ -164,7 +164,7 @@ Manual install from source:
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.user.nanobar.plist
 rm ~/Library/LaunchAgents/com.user.nanobar.plist
-sudo rm /usr/local/bin/nanobar
+rm "$(command -v nanobar)"   # wherever you copied it (/opt/homebrew/bin, /usr/local/bin, …)
 ```
 
 Either way, config removal is optional:
