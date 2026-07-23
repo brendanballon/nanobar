@@ -8,25 +8,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var barPanels: [BarPanel] = []
     private var fullscreenObservers: [Any] = []
     private var fullscreenCheckWork: DispatchWorkItem?
+    private var fullscreenRecheckCount = 0
     private var statusItem: NSStatusItem?
-    private var barPosition: BarPosition = .top
+    private var barGeometry: BarGeometry?
+
+    /// Config values the NSPanel frame is derived from (see BarPanel.barFrame).
+    /// A change to any of them requires a panel rebuild — SwiftUI content
+    /// updates via @Published, but the panel frame is fixed at init.
+    private struct BarGeometry: Equatable {
+        let position:   BarPosition
+        let minHeight:  Double
+        let margin:     SideInsets
+        let padding:    SideInsets
+        let pillHeight: Double
+
+        init(_ config: NanoConfig) {
+            position   = config.bar.resolvedPosition
+            minHeight  = config.bar.minHeight
+            margin     = config.bar.margin
+            padding    = config.bar.padding
+            pillHeight = config.pill.height
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         ConfigLoader.shared.loadOrCreate()
         applyTheme(ConfigLoader.shared.config.resolvedTheme)
-        barPosition = ConfigLoader.shared.config.bar.resolvedPosition
+        barGeometry = BarGeometry(ConfigLoader.shared.config)
         // Appearance/widget changes propagate via @Published config. The theme
-        // needs explicit re-application, and a position change needs a panel
-        // rebuild — the NSPanel frame is derived from the position at init.
+        // needs explicit re-application, and a frame-affecting change needs a
+        // panel rebuild — the NSPanel frame is derived from the config at init.
         ConfigLoader.shared.onReload = { [weak self] in
             guard let self else { return }
             let config = ConfigLoader.shared.config
             self.applyTheme(config.resolvedTheme)
-            let position = config.bar.resolvedPosition
-            if position != self.barPosition {
-                self.barPosition = position
+            let geometry = BarGeometry(config)
+            if geometry != self.barGeometry {
+                self.barGeometry = geometry
                 self.reinit()
             }
         }
@@ -67,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.orderFront(nil)
             barPanels.append(panel)
         }
-        checkFullscreenState()
+        scheduleFullscreenCheck(after: 0)
     }
 
     @objc private func screensChanged() {
@@ -116,7 +136,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
     }
 
+    /// Exit-fullscreen notifications fire at the start of the space transition,
+    /// so a check can run while the departing window still covers the screen.
+    /// A few bounded catch-up re-checks recover from that; re-polling forever
+    /// would scan the global window list every 2s for the whole fullscreen session.
+    private static let maxFullscreenRechecks = 3
+    private static let fullscreenRecheckDelay: TimeInterval = 2.0
+
     private func scheduleFullscreenCheck(after delay: TimeInterval = 0.6) {
+        fullscreenRecheckCount = 0
+        enqueueFullscreenCheck(after: delay)
+    }
+
+    private func enqueueFullscreenCheck(after delay: TimeInterval) {
         fullscreenCheckWork?.cancel()
         let item = DispatchWorkItem { [weak self] in self?.checkFullscreenState() }
         fullscreenCheckWork = item
@@ -129,17 +161,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let targets = barPanels.map { (panel: $0, sf: $0.associatedScreen.frame) }
         Task(priority: .userInitiated) {
             let results = await Task.detached(priority: .userInitiated) {
-                targets.map { (panel, sf) in
-                    (panel, AppDelegate.screenHasFullscreenWindow(sf: sf, primaryH: primaryH))
+                // The window list is global — query and parse it once, then test
+                // each screen against it, instead of re-querying per monitor.
+                let windowRects = AppDelegate.fullscreenCandidateRects(primaryH: primaryH)
+                return targets.map { (panel, sf) in
+                    (panel, AppDelegate.screenHasFullscreenWindow(sf: sf, windowRects: windowRects))
                 }
             }.value
             for (panel, hidden) in results { panel.setFullscreenHidden(hidden) }
-            // The exit-fullscreen notifications fire at the start of the space
-            // transition — a check can run while the departing window still covers
-            // the screen, leaving the bar hidden with no further event to revive
-            // it. While any panel is hidden, keep re-checking until it isn't.
-            if results.contains(where: { $0.1 }) {
-                scheduleFullscreenCheck(after: 2.0)
+            // While any panel is hidden, re-check a bounded number of times to
+            // catch a mid-transition snapshot; steady-state hidden panels are
+            // revived by the workspace observers, not by polling.
+            if results.contains(where: { $0.1 }), fullscreenRecheckCount < Self.maxFullscreenRechecks {
+                fullscreenRecheckCount += 1
+                enqueueFullscreenCheck(after: Self.fullscreenRecheckDelay)
             }
         }
     }
@@ -156,22 +191,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
-    nonisolated private static func screenHasFullscreenWindow(sf: CGRect, primaryH: CGFloat) -> Bool {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
-        for info in list {
-            guard let layer = info[kCGWindowLayer as String] as? Int else { continue }
-            guard let boundsDict = info[kCGWindowBounds as String] as? NSDictionary else { continue }
+    /// Cocoa-coordinate rects of normal-layer on-screen windows — the only
+    /// candidates that can be fullscreen windows.
+    nonisolated private static func fullscreenCandidateRects(primaryH: CGFloat) -> [CGRect] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return list.compactMap { info in
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer <= 0 else { return nil }
+            guard let boundsDict = info[kCGWindowBounds as String] as? NSDictionary else { return nil }
             var cgRect = CGRect.zero
-            guard CGRectMakeWithDictionaryRepresentation(boundsDict, &cgRect) else { continue }
-            let cocoaRect = CGRect(x: cgRect.minX, y: primaryH - cgRect.maxY, width: cgRect.width, height: cgRect.height)
-            let coversScreen = layer <= 0
-                && cocoaRect.width  == sf.width
-                && cocoaRect.minX   == sf.minX
-                && cocoaRect.minY   == sf.minY
-                && cocoaRect.height >= sf.height - 50
-            if coversScreen { return true }
+            guard CGRectMakeWithDictionaryRepresentation(boundsDict, &cgRect) else { return nil }
+            return CGRect(x: cgRect.minX, y: primaryH - cgRect.maxY, width: cgRect.width, height: cgRect.height)
         }
-        return false
+    }
+
+    /// A fullscreen window can report a height short of the screen by up to the
+    /// menu-bar/notch strip during transitions.
+    nonisolated private static let fullscreenHeightTolerance: CGFloat = 50
+
+    nonisolated private static func screenHasFullscreenWindow(sf: CGRect, windowRects: [CGRect]) -> Bool {
+        windowRects.contains { rect in
+            rect.width  == sf.width
+                && rect.minX   == sf.minX
+                && rect.minY   == sf.minY
+                && rect.height >= sf.height - fullscreenHeightTolerance
+        }
     }
 
 }

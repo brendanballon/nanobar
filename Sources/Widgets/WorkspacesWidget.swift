@@ -1,11 +1,24 @@
 import AppKit
 import Foundation
 import Monitors
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "com.nanobar.NanoBar", category: "workspaces")
 
 // MARK: - AeroSpace client
 
 private struct TimeoutError: Error {}
+
+/// Process isn't Sendable, but the timeout path must terminate it from another
+/// task. NSTask's run/terminate/isRunning are thread-safe.
+private final class ProcessBox: @unchecked Sendable {
+    let process = Process()
+
+    func terminateIfRunning() {
+        if process.isRunning { process.terminate() }
+    }
+}
 
 private final class AeroSpaceClient: @unchecked Sendable {
     static let shared = AeroSpaceClient()
@@ -41,30 +54,44 @@ private final class AeroSpaceClient: @unchecked Sendable {
 
     func run(args: [String]) async throws -> String {
         guard let url = Self.binaryURL else { throw CocoaError(.fileNoSuchFile) }
+        let box = ProcessBox()
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
                 try await withCheckedThrowingContinuation { continuation in
-                    let process = Process()
+                    let process = box.process
                     process.executableURL = url
                     process.arguments = args
                     let pipe = Pipe()
                     process.standardOutput = pipe
-                    process.standardError  = Pipe()
-                    process.terminationHandler = { _ in
+                    // Null device, not an unread Pipe — a full ~64KB stderr
+                    // buffer would block the child forever.
+                    process.standardError = FileHandle.nullDevice
+                    do    { try process.run() }
+                    catch { continuation.resume(throwing: error); return }
+                    // Drain stdout continuously, then reap. Reading only after
+                    // termination deadlocks once output exceeds the pipe buffer.
+                    DispatchQueue.global().async {
                         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                        process.waitUntilExit()
                         continuation.resume(returning: String(data: data, encoding: .utf8) ?? "")
                     }
-                    do    { try process.run() }
-                    catch { continuation.resume(throwing: error) }
                 }
             }
             group.addTask {
                 try await Task.sleep(for: .seconds(30))
                 throw TimeoutError()
             }
-            let result = try await group.next() ?? ""
-            group.cancelAll()
-            return result
+            do {
+                let result = try await group.next() ?? ""
+                group.cancelAll()
+                return result
+            } catch {
+                // Kill the child on timeout so it can't linger; the resulting
+                // EOF unblocks the reader task.
+                box.terminateIfRunning()
+                group.cancelAll()
+                throw error
+            }
         }
     }
 }
@@ -86,6 +113,19 @@ private struct WorkspaceState: Sendable, Equatable {
         self.windows = Array(windows.prefix(Self.maxWindowIcons))
         self.monitorID = monitorID
     }
+
+    /// Copy with selected fields replaced; routes through init to keep the icon cap.
+    func with(isFocused: Bool? = nil, windows: [WindowInfo]? = nil) -> WorkspaceState {
+        WorkspaceState(
+            id: id,
+            isFocused: isFocused ?? self.isFocused,
+            windows: windows ?? self.windows,
+            monitorID: monitorID
+        )
+    }
+
+    /// Empty unfocused workspaces are dropped from the bar.
+    var isVisible: Bool { !windows.isEmpty || isFocused }
 }
 
 private struct WindowInfo: Sendable, Equatable {
@@ -99,13 +139,15 @@ private struct WindowInfo: Sendable, Equatable {
 /// is linear and would otherwise re-run on every pill render.
 @MainActor
 private enum AppIconCache {
-    private static var icons: [String: NSImage] = [:]
+    /// Values cache both hits and misses (nil) — an unresolved name would
+    /// otherwise rescan runningApplications on every render.
+    private static var icons: [String: NSImage?] = [:]
 
     static func icon(for appName: String) -> NSImage? {
         if let cached = icons[appName] { return cached }
         let icon = NSWorkspace.shared.runningApplications
             .first { $0.localizedName == appName }?.icon
-        if let icon { icons[appName] = icon }
+        icons[appName] = .some(icon)
         return icon
     }
 
@@ -117,14 +159,18 @@ private enum AppIconCache {
 // MARK: - Live state
 
 @MainActor
-private final class WorkspacesState: ObservableObject, @unchecked Sendable {
+private final class WorkspacesState: ObservableObject {
     static let shared = WorkspacesState()
+
+    /// Window-focus (F) events arriving right after a workspace switch are
+    /// echoes of the switch itself — ignore them within this window.
+    private static let focusEchoWindow: TimeInterval = 0.15
 
     @Published var states: [WorkspaceState] = []
 
     private var cachedStates: [WorkspaceState] = []
     private var lastWorkspaceChangeTime: Date = .distantPast
-    nonisolated(unsafe) private var appTerminationObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var appObservers: [NSObjectProtocol] = []
 
     private let notifySocketPath = "/tmp/nanobar-notify.sock"
     private var notifySource: DispatchSourceRead?
@@ -133,25 +179,40 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
     init() {
         Task { await fetchAndNotify() }
         startNotifySocket()
-        appTerminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil, queue: .main
-        ) { [weak self] notification in
-            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  let name = app.localizedName else { return }
-            MainActor.assumeIsolated {
-                AppIconCache.evict(name)
-                self?.removeApp(named: name)
-            }
-        }
+        let center = NSWorkspace.shared.notificationCenter
+        appObservers = [
+            center.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification,
+                object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let name = Self.appName(from: notification) else { return }
+                MainActor.assumeIsolated {
+                    AppIconCache.evict(name)
+                    self?.removeApp(named: name)
+                }
+            },
+            // A fresh launch invalidates a cached icon miss — the app may have
+            // been looked up before NSWorkspace registered it.
+            center.addObserver(
+                forName: NSWorkspace.didLaunchApplicationNotification,
+                object: nil, queue: .main
+            ) { notification in
+                guard let name = Self.appName(from: notification) else { return }
+                MainActor.assumeIsolated { AppIconCache.evict(name) }
+            },
+        ]
     }
 
     deinit {
-        appTerminationObserver.map { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        appObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         notifySource?.cancel()
         if serverFD >= 0 { close(serverFD) }
         // Don't unlink the socket path here — startNotifySocket() handles cleanup on
         // next bind, and unlinking here would destroy a socket created by a newer instance.
+    }
+
+    nonisolated private static func appName(from notification: Notification) -> String? {
+        (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.localizedName
     }
 
     // MARK: - Notify socket
@@ -159,7 +220,10 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
     private func startNotifySocket() {
         unlink(notifySocketPath)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            log.error("notify socket: socket() failed (errno \(errno)) — bar will not live-update")
+            return
+        }
         serverFD = fd
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -173,7 +237,12 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
                 bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        guard bindOK == 0, listen(fd, 5) == 0 else { close(fd); return }
+        guard bindOK == 0, listen(fd, 5) == 0 else {
+            log.error("notify socket: bind/listen failed (errno \(errno)) — bar will not live-update")
+            close(fd)
+            serverFD = -1
+            return
+        }
         // Run on main queue so the handler is @MainActor-compatible.
         // accept()+read() on a local domain socket are instant — safe on main.
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
@@ -208,7 +277,7 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
             applyFocusChange(prev: parts[1], next: parts[2])
             await fetchWindowsOnly(animated: false)
         case "F":
-            guard Date().timeIntervalSince(lastWorkspaceChangeTime) > 0.15 else { return }
+            guard Date().timeIntervalSince(lastWorkspaceChangeTime) > Self.focusEchoWindow else { return }
             await fetchWindowsOnly()
         case "M":
             await fetchWorkspacesOnly()
@@ -221,12 +290,9 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
 
     private func applyFocusChange(prev: String, next: String) {
         var updated = cachedStates.map { ws in
-            WorkspaceState(
-                id: ws.id,
-                isFocused: ws.id == next ? true : (ws.id == prev ? false : ws.isFocused),
-                windows: ws.windows,
-                monitorID: ws.monitorID
-            )
+            ws.id == next ? ws.with(isFocused: true)
+                : ws.id == prev ? ws.with(isFocused: false)
+                : ws
         }
         if !updated.contains(where: { $0.id == next }) {
             let monitorID = cachedStates.first { $0.id == prev }?.monitorID ?? 1
@@ -238,15 +304,8 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
 
     private func removeApp(named name: String) {
         let updated = cachedStates
-            .map { ws in
-                WorkspaceState(
-                    id: ws.id,
-                    isFocused: ws.isFocused,
-                    windows: ws.windows.filter { $0.appName != name },
-                    monitorID: ws.monitorID
-                )
-            }
-            .filter { !$0.windows.isEmpty || $0.isFocused }
+            .map { ws in ws.with(windows: ws.windows.filter { $0.appName != name }) }
+            .filter(\.isVisible)
         updateAndPublish(updated)
     }
 
@@ -260,15 +319,8 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         let fallbackMonitorID = cachedStates.first { $0.isFocused }?.monitorID ?? 1
 
         var updated = cachedStates
-            .map { ws in
-                WorkspaceState(
-                    id: ws.id,
-                    isFocused: ws.isFocused,
-                    windows: wsWindows[ws.id] ?? [],
-                    monitorID: ws.monitorID
-                )
-            }
-            .filter { !$0.windows.isEmpty || $0.isFocused }
+            .map { ws in ws.with(windows: wsWindows[ws.id] ?? []) }
+            .filter(\.isVisible)
 
         for wsID in wsWindows.keys where !knownIDs.contains(wsID) {
             updated.append(WorkspaceState(
@@ -302,7 +354,11 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
             let (wsOut, winOut)        = try await (wsTask, winTask)
             let (wsMonitor, wsFocused) = parseWorkspaceList(wsOut)
             return buildStates(monitor: wsMonitor, focused: wsFocused, windowsByWS: parseWindowList(winOut))
-        } catch { return [] }
+        } catch {
+            // Keep the last good state — returning [] would blank the whole
+            // bar on a transient CLI failure.
+            return cachedStates
+        }
     }
 
     // MARK: - Parsing / assembly helpers
@@ -314,10 +370,13 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         windowsByWS: [String: [WindowInfo]]
     ) -> [WorkspaceState] {
         monitor.keys.sorted().compactMap { wsID in
-            let windows = windowsByWS[wsID] ?? []
-            let isFocused = focused[wsID] ?? false
-            guard !windows.isEmpty || isFocused else { return nil }
-            return WorkspaceState(id: wsID, isFocused: isFocused, windows: windows, monitorID: monitor[wsID]!)
+            let state = WorkspaceState(
+                id: wsID,
+                isFocused: focused[wsID] ?? false,
+                windows: windowsByWS[wsID] ?? [],
+                monitorID: monitor[wsID]!
+            )
+            return state.isVisible ? state : nil
         }
     }
 
@@ -353,7 +412,7 @@ private final class WorkspacesState: ObservableObject, @unchecked Sendable {
         guard newStates != cachedStates else { return }
         cachedStates = newStates
         if animated {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
+            withAnimation(Theme.springStateChange) {
                 states = newStates
             }
         } else {
@@ -421,7 +480,7 @@ private struct WorkspacePill: View {
     }
 
     private var hoverAnimation: Animation {
-        expandsOnHover ? Theme.springLabelHover : .easeInOut(duration: 0.15)
+        expandsOnHover ? Theme.springLabelHover : Theme.easeHover
     }
 
     var body: some View {
@@ -487,7 +546,9 @@ private struct AppIconView: View {
                 .frame(width: Theme.appIconSize, height: Theme.appIconSize)
                 .scaleEffect(isHovered ? 1.15 : 1.0)
                 .animation(Theme.springIconHover, value: isHovered)
-                .interactiveRegion()
+                // No interactiveRegion() here — the enclosing pill's region already
+                // covers the icons; per-icon GeometryReaders would republish the
+                // preference every animation frame for nothing.
                 .onHover { isHovered = $0 }
                 .onTapGesture {
                     AeroSpaceClient.shared.focusWindow(window.windowID)

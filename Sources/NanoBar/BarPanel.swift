@@ -38,6 +38,10 @@ final class BarPanel: NSPanel {
             defer: false
         )
 
+        // ARC owns the panel via AppDelegate.barPanels — without this, close()
+        // performs an AppKit release ARC doesn't balance (over-release crash on reinit).
+        isReleasedWhenClosed = false
+
         // Panel has a fixed frame — disable SwiftUI's per-frame sizeThatFits computation.
         // Without this, NSHostingView.layout() calls _sizeThatFits on every display cycle
         // which traverses the entire view graph (StackLayout, ViewThatFits, GeometryReaders).
@@ -91,30 +95,39 @@ final class BarPanel: NSPanel {
     static func barFrame(for screen: NSScreen, position: BarPosition) -> CGRect {
         let sf = screen.frame
         let menuBarH = sf.maxY - screen.visibleFrame.maxY
+        let config = ConfigLoader.shared.config
         switch position {
-        case .left:
+        case .left, .right:
+            let width = sidebarWidth(config)
             return CGRect(
-                x: sf.minX,
+                x: position == .left ? sf.minX : sf.maxX - width,
                 y: sf.minY,
-                width:  Theme.sidebarContainerWidth + Theme.shadowOverflow,
-                height: sf.height - menuBarH
-            )
-        case .right:
-            return CGRect(
-                x: sf.maxX - Theme.sidebarContainerWidth - Theme.shadowOverflow,
-                y: sf.minY,
-                width:  Theme.sidebarContainerWidth + Theme.shadowOverflow,
+                width:  width,
                 height: sf.height - menuBarH
             )
         case .top:
             // menuBarH is 0 when the menu bar auto-hides (bar takes its place);
             // otherwise the bar sits below the persistent menu bar.
+            let height = topBarHeight(config)
             return CGRect(
                 x: sf.minX,
-                y: sf.maxY - menuBarH - Theme.barContainerHeight - Theme.shadowOverflow,
+                y: sf.maxY - menuBarH - height,
                 width:  sf.width,
-                height: Theme.barContainerHeight + Theme.shadowOverflow
+                height: height
             )
         }
+    }
+
+    /// Panel height derived from the same config values that size the SwiftUI
+    /// content (BarRootView.topLayout), so growing the bar can't clip it.
+    private static func topBarHeight(_ config: NanoConfig) -> CGFloat {
+        let bar = config.bar
+        let contentHeight = max(bar.minHeight, config.pill.height + bar.padding.top + bar.padding.bottom)
+        return CGFloat(contentHeight + bar.margin.top + bar.margin.bottom) + Theme.shadowOverflow
+    }
+
+    private static func sidebarWidth(_ config: NanoConfig) -> CGFloat {
+        let margin = config.bar.margin
+        return Theme.sidebarContainerWidth + CGFloat(margin.left + margin.right) + Theme.shadowOverflow
     }
 }

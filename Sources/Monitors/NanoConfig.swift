@@ -3,7 +3,7 @@ import Foundation
 // MARK: - AppTheme
 
 /// Controls the app-wide color scheme. Persisted as `theme` in the config file.
-public enum AppTheme: String, CaseIterable, Sendable {
+public enum AppTheme: String, Sendable {
     case system
     case light
     case dark
@@ -260,7 +260,7 @@ public struct NanoConfig: Sendable {
         # bar-padding-left = 8
         #
         # bar-border = false
-        # bar-border-width = 1.0
+        # bar-border-width = 0.75
         # bar-border-color = #FFFFFF59
 
         # ── Pill ──────────────────────────────────────────────────────────────────────

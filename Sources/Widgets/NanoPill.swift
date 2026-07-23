@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Liquid Glass effect variant (macOS 26+).
 /// Named GlassVariant to avoid shadowing SwiftUI's Glass type.
-public enum GlassVariant: Sendable, Equatable {
+/// Raw values are the config tokens.
+public enum GlassVariant: String, Sendable, Equatable {
     case regular
     case clear
     case identity
@@ -15,17 +16,9 @@ public enum GlassVariant: Sendable, Equatable {
 /// Blur appearance: material + specular overlay + drop shadow.
 /// Used by the `.blur` variant and as the pre-macOS 26 liquidGlass fallback.
 public struct BlurAppearance: Sendable, Equatable {
-    public enum Material: Sendable, Equatable {
+    /// Raw values are the config tokens.
+    public enum Material: String, Sendable, Equatable {
         case regular, thin, ultraThin
-
-        /// Maps a config string ("regular" | "thin" | "ultraThin"); unknown → .regular.
-        public init(configValue: String) {
-            switch configValue {
-            case "thin":      self = .thin
-            case "ultraThin": self = .ultraThin
-            default:          self = .regular
-            }
-        }
 
         public var swiftUIMaterial: SwiftUI.Material {
             switch self {
@@ -52,7 +45,8 @@ public struct BlurAppearance: Sendable, Equatable {
 /// Global pill appearance, injected via @Environment(\.pillStyle).
 /// The host builds it from config (see AppearanceStyles.swift).
 public struct PillStyle: Sendable, Equatable {
-    public enum Variant: Sendable, Equatable { case liquidGlass, blur, solid, none }
+    /// Raw values are the config tokens.
+    public enum Variant: String, Sendable, Equatable { case liquidGlass, blur, solid, none }
 
     public let variant:       Variant
     public let height:        CGFloat
@@ -60,28 +54,28 @@ public struct PillStyle: Sendable, Equatable {
     public let cornerRadius:  CGFloat
     public let border:        Bool
     public let borderWidth:   CGFloat
-    public let borderColor:   Color?          // nil = adaptive
+    public let borderColor:   Color
     public let glassDefault:  GlassVariant
     public let glassHover:    GlassVariant
     public let glassToggled:  GlassVariant
     public let blur:          BlurAppearance  // .blur variant + pre-26 liquidGlass fallback
-    public let solidColor:    Color?          // fill color for .solid variant; nil = system default
+    public let solidColor:    Color           // fill color for .solid variant
     public let solidShadow:   Bool            // drop shadow for .solid variant
 
     public init(
         variant:      Variant,
         height:       CGFloat,
-        minWidth:     CGFloat = 30,
+        minWidth:     CGFloat,
         cornerRadius: CGFloat,
         border:       Bool,
         borderWidth:  CGFloat,
-        borderColor:  Color?,
+        borderColor:  Color,
         glassDefault: GlassVariant,
         glassHover:   GlassVariant,
         glassToggled: GlassVariant,
-        blur:         BlurAppearance = BlurAppearance(),
-        solidColor:   Color? = nil,
-        solidShadow:  Bool   = false
+        blur:         BlurAppearance,
+        solidColor:   Color,
+        solidShadow:  Bool
     ) {
         self.variant      = variant
         self.height       = height
@@ -147,37 +141,32 @@ public struct NanoPillModifier: ViewModifier {
             .padding(.leading,  iconPadLeft)
             .padding(.trailing, labelPadRight)
             .frame(minWidth: pillStyle.minWidth)
-        backgrounded(
-            fixedHeight
-                ? AnyView(padded.frame(height: pillStyle.height))
-                : AnyView(padded.padding(.vertical, (pillStyle.height - Theme.labelSize) / 2)),
-            shape: shape,
-            activeGlass: activeGlass
-        )
+        // Concrete branch types (no AnyView) so SwiftUI keeps structural identity.
+        Group {
+            if fixedHeight {
+                backgrounded(padded.frame(height: pillStyle.height), shape: shape, activeGlass: activeGlass)
+            } else {
+                backgrounded(padded.padding(.vertical, (pillStyle.height - Theme.labelSize) / 2), shape: shape, activeGlass: activeGlass)
+            }
+        }
         .interactiveRegion()
     }
 
     @ViewBuilder
     private func backgrounded<V: View>(_ content: V, shape: RoundedRectangle, activeGlass: GlassVariant) -> some View {
-        if #available(macOS 26, *) {
-            backgroundedLiquidGlass(content, shape: shape, activeGlass: activeGlass)
-        } else {
-            backgroundedBlur(content, shape: shape)
-        }
-    }
-
-    @available(macOS 26, *)
-    @ViewBuilder
-    private func backgroundedLiquidGlass<V: View>(_ content: V, shape: RoundedRectangle, activeGlass: GlassVariant) -> some View {
         switch pillStyle.variant {
         case .liquidGlass:
-            let tintOpacity: Double = hovered ? 0.3 : focused ? 0.5 : 0.0
-            let glass = tintOpacity > 0
-                ? makeGlass(from: activeGlass).tint(.white.opacity(tintOpacity))
-                : makeGlass(from: activeGlass)
-            content
-                .glassEffect(glass, in: shape)
-                .overlay { borderOverlay(shape: shape) }
+            if #available(macOS 26, *) {
+                let tintOpacity: Double = hovered ? 0.3 : focused ? 0.5 : 0.0
+                let glass = tintOpacity > 0
+                    ? makeGlass(from: activeGlass).tint(.white.opacity(tintOpacity))
+                    : makeGlass(from: activeGlass)
+                content
+                    .glassEffect(glass, in: shape)
+                    .overlay { borderOverlay(shape: shape) }
+            } else {
+                backgroundedMaterial(content, shape: shape, blur: pillStyle.blur)
+            }
         case .blur:
             backgroundedMaterial(content, shape: shape, blur: pillStyle.blur)
         case .solid:
@@ -198,25 +187,10 @@ public struct NanoPillModifier: ViewModifier {
 
     @ViewBuilder
     private func backgroundedSolid<V: View>(_ content: V, shape: RoundedRectangle) -> some View {
-        let fill = pillStyle.solidColor ?? Color(red: 0.11, green: 0.11, blue: 0.118, opacity: 0.8)
         content
-            .background { shape.fill(fill) }
+            .background { shape.fill(pillStyle.solidColor) }
             .overlay { borderOverlay(shape: shape) }
             .modifier(PillShadow(enabled: pillStyle.solidShadow))
-    }
-
-    @ViewBuilder
-    private func backgroundedBlur<V: View>(_ content: V, shape: RoundedRectangle) -> some View {
-        switch pillStyle.variant {
-        case .none:
-            content.clipShape(shape)
-        case .blur:
-            backgroundedMaterial(content, shape: shape, blur: pillStyle.blur)
-        case .solid:
-            backgroundedSolid(content, shape: shape)
-        case .liquidGlass:
-            backgroundedMaterial(content, shape: shape, blur: pillStyle.blur)
-        }
     }
 
     @ViewBuilder
@@ -243,10 +217,7 @@ public struct NanoPillModifier: ViewModifier {
     @ViewBuilder
     private func borderOverlay(shape: RoundedRectangle) -> some View {
         if pillStyle.border {
-            shape.strokeBorder(
-                pillStyle.borderColor ?? Color.white.opacity(0.28),
-                lineWidth: pillStyle.borderWidth
-            )
+            shape.strokeBorder(pillStyle.borderColor, lineWidth: pillStyle.borderWidth)
         }
     }
 }

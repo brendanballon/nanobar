@@ -11,39 +11,30 @@ extension PillStyle {
     /// config-derived style into the environment.
     public static let `default` = PillStyle(NanoConfig.PillConfig())
 
+    /// Adaptive pill border when `pill-border-color` is unset (documented in the
+    /// reference config).
+    private static let defaultBorderColorHex = "#FFFFFF47"
+
     public init(_ config: NanoConfig.PillConfig) {
-        let variant: Variant = {
-            switch config.style {
-            case "blur":  return .blur
-            case "solid": return .solid
-            case "none":  return .none
-            default:      return .liquidGlass
-            }
-        }()
-
-        let mapEffect: (String) -> GlassVariant = {
-            switch $0 {
-            case "regular":  return .regular
-            case "identity": return .identity
-            default:         return .clear
-            }
-        }
-
+        // Invalid user hex values fall back to the schema defaults, which always parse.
+        let schemaDefaults = NanoConfig.PillConfig()
         self.init(
-            variant:      variant,
+            variant:      Variant(rawValue: config.style) ?? .blur,
             height:       CGFloat(config.height),
             minWidth:     CGFloat(config.minWidth),
             cornerRadius: CGFloat(config.cornerRadius),
             border:       config.border.enabled,
             borderWidth:  CGFloat(config.border.width),
-            borderColor:  config.border.color.flatMap { Theme.color(hex: $0) },
-            glassDefault: mapEffect(config.glassDefault),
-            glassHover:   mapEffect(config.glassHover),
-            glassToggled: mapEffect(config.glassToggled),
-            blur:         BlurAppearance(material: .init(configValue: config.blurMaterial),
+            borderColor:  config.border.color.flatMap { Theme.color(hex: $0) }
+                          ?? Theme.color(hex: Self.defaultBorderColorHex) ?? .white,
+            glassDefault: GlassVariant(rawValue: config.glassDefault) ?? .clear,
+            glassHover:   GlassVariant(rawValue: config.glassHover)   ?? .clear,
+            glassToggled: GlassVariant(rawValue: config.glassToggled) ?? .clear,
+            blur:         BlurAppearance(material: .init(rawValue: config.blurMaterial) ?? .regular,
                                          specular: config.blurSpecular,
                                          shadow:   config.blurShadow),
-            solidColor:   Theme.color(hex: config.solidColor),
+            solidColor:   Theme.color(hex: config.solidColor)
+                          ?? Theme.color(hex: schemaDefaults.solidColor) ?? .black,
             solidShadow:  config.solidShadow
         )
     }
@@ -70,7 +61,7 @@ public struct BarStyle: Sendable {
     public let borderColor:  Color
 
     public init(_ config: NanoConfig.BarConfig) {
-        blurMaterial = BlurAppearance.Material(configValue: config.blurMaterial)
+        blurMaterial = BlurAppearance.Material(rawValue: config.blurMaterial) ?? .regular
         minHeight    = CGFloat(config.minHeight)
         cornerRadius = CGFloat(config.cornerRadius)
         shadow       = config.shadow
