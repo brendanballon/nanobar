@@ -1,10 +1,19 @@
 # NanoBar
 
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue)
+![Swift 6](https://img.shields.io/badge/Swift-6-orange)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
+![Homebrew](https://img.shields.io/badge/Homebrew-xeydev%2Ftap-brown)
+
 A lightweight AeroSpace workspace bar for macOS — pure Swift/SwiftUI, no Electron, no shell scripts on the hot path.
+
+Unlike script-driven bars, NanoBar talks to AeroSpace over a Unix socket and renders natively: no polling loops, no config language to learn, and it works out of the box with zero configuration.
 
 **Requires macOS 15 (Sequoia) or later**
 
-![NanoBar screenshot](docs/screenshot.webp)
+<img src="docs/screenshot-side.webp" alt="NanoBar as a sidebar on the left screen edge" width="354">
+
+*Sidebar mode (`bar-position = left`)*
 
 ---
 
@@ -14,20 +23,35 @@ A lightweight AeroSpace workspace bar for macOS — pure Swift/SwiftUI, no Elect
 - **Liquid Glass pills** — native macOS 26 glass effect with hover/focus states; vibrancy blur fallback on macOS 15
 - **Multi-monitor** — one bar per screen, automatically managed
 - **Fullscreen aware** — bar hides when a fullscreen window covers the screen
-- **Native performance** — ~2% CPU at idle
+- **Native performance** — ~0% CPU at idle
 
 ---
 
-## Installation
+## Quick start
 
-### Homebrew (recommended)
+**1. Install and start** (Homebrew):
 
 ```bash
 brew install xeydev/tap/nanobar
 brew services start nanobar
 ```
 
-### From source
+**2. Hook up AeroSpace** — add this to `~/.aerospace.toml` so workspace changes appear instantly:
+
+```toml
+exec-on-workspace-change = ['/bin/bash', '-c',
+  'printf "%s" "$AEROSPACE_FOCUSED_WORKSPACE" | nc -U /tmp/nanobar-notify.sock']
+```
+
+**3. Reload AeroSpace config:**
+
+```bash
+aerospace reload-config
+```
+
+Done — the bar is running with default settings. To customize, see [Configuration](#configuration).
+
+### Building from source
 
 ```bash
 git clone https://github.com/xeydev/nanobar
@@ -126,24 +150,25 @@ pill-solid-shadow = false
 
 ---
 
-## AeroSpace Integration
+## Uninstalling
 
-The workspaces widget listens on a Unix socket for instant updates. Add this to `~/.aerospace.toml`:
+Homebrew install:
 
-```toml
-exec-on-workspace-change = ['/bin/bash', '-c',
-  'printf "%s" "$AEROSPACE_FOCUSED_WORKSPACE" | nc -U /tmp/nanobar-notify.sock']
+```bash
+brew services stop nanobar
+brew uninstall nanobar
 ```
 
-Without it, workspace state is only fetched at startup — the socket hook is what makes focus changes appear instantly.
-
----
-
-## Uninstalling
+Manual install from source:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.user.nanobar.plist
 rm ~/Library/LaunchAgents/com.user.nanobar.plist
 sudo rm /usr/local/bin/nanobar
-rm -rf ~/.config/nanobar   # optional — removes your config
+```
+
+Either way, config removal is optional:
+
+```bash
+rm -rf ~/.config/nanobar
 ```
