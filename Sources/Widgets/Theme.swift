@@ -7,9 +7,6 @@ public enum Theme {
 
     // MARK: - Layout
     public static let sidebarContainerWidth: CGFloat = 72
-    public static let itemGap: CGFloat = 4
-    public static let appIconSize: CGFloat = 16
-    public static let labelSize: CGFloat = 12
 
     // MARK: - Bar shadow
     public static let barShadowOpacity: Double  = 0.3
@@ -18,6 +15,11 @@ public enum Theme {
     /// Extra window extent reserved so the bar's drop shadow isn't clipped;
     /// derived from the shadow spec so tuning it can't silently clip.
     public static let shadowOverflow: CGFloat = barShadowRadius + barShadowY + 2
+
+    // MARK: - Downloads
+    /// Tallest the expanded downloads list gets; horizontal bar panels reserve this much extra room.
+    public static let downloadsListMaxHeight: CGFloat = 600
+    public static let downloadsListMaxWidth: CGFloat = 900
 
     // MARK: - Animations
     public static let menuBarAnimDuration: Double    = 0.25

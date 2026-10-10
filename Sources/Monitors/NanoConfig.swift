@@ -13,7 +13,10 @@ public enum AppTheme: String, Sendable {
 
 /// Where the bar appears on screen. Persisted as `bar-position`.
 public enum BarPosition: String, Sendable {
-    case top, left, right
+    case top, bottom, left, right
+
+    /// True for bars that run along the top or bottom edge.
+    public var isHorizontal: Bool { self == .top || self == .bottom }
 }
 
 // MARK: - WorkspaceMode
@@ -100,7 +103,7 @@ public struct NanoConfig: Sendable {
         public var minHeight:    Double       = 30
         public var cornerRadius: Double       = 0
         public var shadow:       Bool         = false
-        /// "top" | "left" | "right"
+        /// "top" | "bottom" | "left" | "right"
         public var position:     String       = "top"
         /// Gap between screen edge and bar background.
         public var margin:       SideInsets   = SideInsets()
@@ -122,6 +125,12 @@ public struct NanoConfig: Sendable {
         public var height:       Double       = 30
         public var minWidth:     Double       = 30
         public var cornerRadius: Double       = 15
+        /// Workspace label text size, in points.
+        public var fontSize:     Double       = 12
+        /// App icon edge length, in points.
+        public var iconSize:     Double       = 16
+        /// Gap between neighbouring pills, in points.
+        public var gap:          Double       = 4
         public var border:       BorderConfig = BorderConfig(enabled: true)
         /// Glass effect per interaction state (liquidGlass style):
         /// "regular" | "clear" | "identity"
@@ -179,6 +188,9 @@ public struct NanoConfig: Sendable {
         pill.height       = Self.double(v["pill-height"])        ?? pill.height
         pill.minWidth     = Self.double(v["pill-min-width"])     ?? pill.minWidth
         pill.cornerRadius = Self.double(v["pill-corner-radius"]) ?? pill.cornerRadius
+        pill.fontSize     = Self.double(v["pill-font-size"])     ?? pill.fontSize
+        pill.iconSize     = Self.double(v["pill-icon-size"])     ?? pill.iconSize
+        pill.gap          = Self.double(v["pill-gap"])           ?? pill.gap
         pill.border       = Self.border(v, "pill-border", base: pill.border)
         pill.glassDefault = v["pill-glass-default"]             ?? pill.glassDefault
         pill.glassHover   = v["pill-glass-hover"]               ?? pill.glassHover
@@ -240,7 +252,7 @@ public struct NanoConfig: Sendable {
         # theme = system                     # system | light | dark
 
         # ── Bar ───────────────────────────────────────────────────────────────────────
-        # bar-position = top                 # top | left | right
+        # bar-position = top                 # top | bottom | left | right
         # bar-background = none              # none | blur | color:#RRGGBBAA
         # bar-blur-material = regular        # regular | thin | ultraThin (blur background)
         # bar-min-height = 30
@@ -268,6 +280,9 @@ public struct NanoConfig: Sendable {
         # pill-height = 30
         # pill-min-width = 30
         # pill-corner-radius = 15
+        # pill-font-size = 12                # workspace label text
+        # pill-icon-size = 16                # app icons
+        # pill-gap = 4                       # space between pills
         # pill-border = true
         # pill-border-width = 0.75
         # pill-border-color = #FFFFFF47     # unset = adaptive

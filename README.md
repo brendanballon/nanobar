@@ -93,6 +93,18 @@ When a workspace pill expands to show its app icons:
 - `expandOnActive` — the focused workspace shows its icons
 - `expandOnHoverAndActive` — icons on hover or on the focused workspace (default)
 
+### Downloads pill
+
+The Downloads pill uses the same appearance settings as the workspace pills. Click it to see the 40 newest completed items in `~/Downloads`. In sidebars, the collapsed pill shows just the download icon.
+
+- Select files using standard macOS selection, including Command-click and Shift-click. Double-click to open.
+- Drag files out, or drop files onto the pill to move them into Downloads. Hold Option to copy.
+- Use **Show in Finder**, or right-click a file to reveal it or copy its path.
+- Resize the expanded pill by dragging its outer edges or corner. The size is remembered.
+- Newly added items give the download icon a brief bounce. Partial downloads are ignored, and Reduce Motion disables the animation.
+
+This is the initial Downloads implementation; more improvements are coming.
+
 ### App
 
 ```
@@ -102,7 +114,7 @@ theme = system   # system | light | dark
 ### Bar
 
 ```
-bar-position = top          # top | left | right
+bar-position = top          # top | bottom | left | right
 bar-background = none       # none | blur | color:#RRGGBBAA
 bar-blur-material = regular # regular | thin | ultraThin (blur background)
 bar-min-height = 30
@@ -129,6 +141,9 @@ pill-style = blur              # liquidGlass | blur | solid | none
 pill-height = 30
 pill-min-width = 30
 pill-corner-radius = 15
+pill-font-size = 12            # workspace label text
+pill-icon-size = 16            # app icons
+pill-gap = 4                   # space between pills
 pill-border = true
 pill-border-width = 0.75
 pill-border-color = #FFFFFF47  # unset = adaptive

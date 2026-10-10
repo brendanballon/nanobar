@@ -427,6 +427,7 @@ struct WorkspaceBarView: View {
     @ObservedObject private var state = WorkspacesState.shared
     @Environment(\.monitorID) private var monitorID
     @Environment(\.barPosition) private var barPosition
+    @Environment(\.pillStyle) private var pillStyle
 
     let mode: WorkspaceMode
     @State private var hoveredID: String?
@@ -436,10 +437,10 @@ struct WorkspaceBarView: View {
     }
 
     var body: some View {
-        if barPosition == .top {
-            HStack(spacing: Theme.itemGap) { pills }
+        if barPosition.isHorizontal {
+            HStack(spacing: pillStyle.gap) { pills }
         } else {
-            VStack(spacing: Theme.itemGap) { pills }
+            VStack(spacing: pillStyle.gap) { pills }
         }
     }
 
@@ -448,7 +449,7 @@ struct WorkspaceBarView: View {
             WorkspacePill(
                 state: ws,
                 mode: mode,
-                vertical: barPosition != .top,
+                vertical: !barPosition.isHorizontal,
                 hoveredID: $hoveredID
             )
         }
@@ -462,6 +463,7 @@ private struct WorkspacePill: View {
     let mode: WorkspaceMode
     let vertical: Bool
     @Binding var hoveredID: String?
+    @Environment(\.pillStyle) private var pillStyle
 
     private var isHovered: Bool { hoveredID == state.id }
 
@@ -520,7 +522,7 @@ private struct WorkspacePill: View {
 
     private var label: some View {
         Text(state.id)
-            .font(.system(size: Theme.labelSize, weight: .semibold))
+            .font(.system(size: pillStyle.fontSize, weight: .semibold))
             .foregroundStyle(state.isFocused ? Theme.labelColor : Theme.grey)
             .fixedSize()
     }
@@ -537,13 +539,14 @@ private struct WorkspacePill: View {
 
 private struct AppIconView: View {
     let window: WindowInfo
+    @Environment(\.pillStyle) private var pillStyle
     @State private var isHovered = false
 
     var body: some View {
         if let icon = AppIconCache.icon(for: window.appName) {
             Image(nsImage: icon)
                 .resizable()
-                .frame(width: Theme.appIconSize, height: Theme.appIconSize)
+                .frame(width: pillStyle.iconSize, height: pillStyle.iconSize)
                 .scaleEffect(isHovered ? 1.15 : 1.0)
                 .animation(Theme.springIconHover, value: isHovered)
                 // No interactiveRegion() here — the enclosing pill's region already

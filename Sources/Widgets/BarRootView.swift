@@ -15,11 +15,12 @@ public struct BarRootView: View {
         // Derived once per body pass — style construction parses colors/strings.
         let bar = BarStyle(cfg.bar)
         let pos = cfg.bar.resolvedPosition
+        let gap = CGFloat(cfg.pill.gap)
         Group {
-            if pos == .top {
-                topLayout(bar: bar)
+            if pos.isHorizontal {
+                horizontalLayout(bar: bar, pos: pos, gap: gap)
             } else {
-                sidebarLayout(bar: bar, pos: pos)
+                sidebarLayout(bar: bar, pos: pos, gap: gap)
             }
         }
         .environment(\.monitorID, monitorID)
@@ -31,33 +32,40 @@ public struct BarRootView: View {
         WorkspaceBarView(mode: cfg.workspaces.resolvedMode)
     }
 
-    // MARK: - Top bar layout
+    // MARK: - Horizontal layout (top / bottom)
 
-    private func topLayout(bar: BarStyle) -> some View {
+    private func horizontalLayout(bar: BarStyle, pos: BarPosition, gap: CGFloat) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: Theme.itemGap) {
+            if pos == .bottom { Spacer(minLength: 0) }
+            HStack(spacing: gap) {
                 workspaces
                 Spacer(minLength: 0)
+                DownloadsPillView()
             }
             .padding(bar.padding)
             .frame(minHeight: bar.minHeight)
-            .background(barBackground(bar: bar, position: .top))
+            .background(barBackground(bar: bar, position: pos))
             .padding(bar.margin)
-            Spacer(minLength: 0)
+            if pos == .top { Spacer(minLength: 0) }
         }
     }
 
     // MARK: - Sidebar layout (left / right)
 
-    private func sidebarLayout(bar: BarStyle, pos: BarPosition) -> some View {
+    private func sidebarLayout(bar: BarStyle, pos: BarPosition, gap: CGFloat) -> some View {
         HStack(spacing: 0) {
             if pos == .right { Spacer(minLength: 0) }
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: Theme.itemGap) {
+                VStack(alignment: .leading, spacing: gap) {
                     workspaces
                 }
                 .padding(bar.padding)
                 Spacer(minLength: 0)
+                HStack(spacing: gap) {
+                    Spacer(minLength: 0)
+                    DownloadsPillView()
+                }
+                .padding(bar.padding)
             }
             .frame(width: Theme.sidebarContainerWidth, alignment: .leading)
             .background(barBackground(bar: bar, position: pos))
@@ -71,7 +79,7 @@ public struct BarRootView: View {
     @ViewBuilder private func barBackground(bar: BarStyle, position: BarPosition) -> some View {
         let shape = RoundedRectangle(cornerRadius: bar.cornerRadius, style: .continuous)
         let shadowX: CGFloat = position == .left ? Theme.barShadowY : (position == .right ? -Theme.barShadowY : 0)
-        let shadowY: CGFloat = position == .top ? Theme.barShadowY : 0
+        let shadowY: CGFloat = position == .top ? Theme.barShadowY : (position == .bottom ? -Theme.barShadowY : 0)
         ZStack {
             switch bar.background {
             case .none:              Color.clear

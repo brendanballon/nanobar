@@ -69,10 +69,20 @@ struct NanoConfigTests {
 
     // MARK: - Bar
 
-    @Test("resolvedPosition parses left and falls back to top for unrecognized string")
+    @Test("resolvedPosition parses left and bottom, falls back to top for unrecognized string")
     func resolvedPositionParsing() {
         #expect(config("bar-position = left").bar.resolvedPosition == .left)
+        #expect(config("bar-position = bottom").bar.resolvedPosition == .bottom)
         #expect(config("bar-position = middle").bar.resolvedPosition == .top)
+    }
+
+    @Test("pill font and icon sizes default to 12/16 and are overridable")
+    func pillContentSizes() {
+        #expect(config("").pill.fontSize == 12)
+        #expect(config("").pill.iconSize == 16)
+        let c = config("pill-font-size = 18\npill-icon-size = 28")
+        #expect(c.pill.fontSize == 18)
+        #expect(c.pill.iconSize == 28)
     }
 
     @Test("insets: base key sets all sides, per-side keys override")

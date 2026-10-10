@@ -9,6 +9,7 @@ final class BarPanel: NSPanel {
     private var menuBarVisible = false
     private var fullscreenHidden = false
     private let barPosition: BarPosition
+    override var canBecomeKey: Bool { true }
     /// True when the system menu bar auto-hides (no strip reserved in
     /// visibleFrame). Only then does the top bar swap places with the menu bar.
     private let menuBarAutoHides: Bool
@@ -108,26 +109,38 @@ final class BarPanel: NSPanel {
         case .top:
             // menuBarH is 0 when the menu bar auto-hides (bar takes its place);
             // otherwise the bar sits below the persistent menu bar.
-            let height = topBarHeight(config)
+            let height = horizontalBarHeight(config)
             return CGRect(
                 x: sf.minX,
                 y: sf.maxY - menuBarH - height,
                 width:  sf.width,
                 height: height
             )
+        case .bottom:
+            // visibleFrame.minY is above a persistent bottom Dock, so the bar
+            // sits on top of it rather than underneath.
+            return CGRect(
+                x: sf.minX,
+                y: screen.visibleFrame.minY,
+                width:  sf.width,
+                height: horizontalBarHeight(config)
+            )
         }
     }
 
     /// Panel height derived from the same config values that size the SwiftUI
-    /// content (BarRootView.topLayout), so growing the bar can't clip it.
-    private static func topBarHeight(_ config: NanoConfig) -> CGFloat {
+    /// content (BarRootView.horizontalLayout), so growing the bar can't clip it.
+    private static func horizontalBarHeight(_ config: NanoConfig) -> CGFloat {
         let bar = config.bar
         let contentHeight = max(bar.minHeight, config.pill.height + bar.padding.top + bar.padding.bottom)
+        // Plus transparent, click-through room for the downloads pill to expand into.
         return CGFloat(contentHeight + bar.margin.top + bar.margin.bottom) + Theme.shadowOverflow
+            + Theme.downloadsListMaxHeight + 1
     }
 
     private static func sidebarWidth(_ config: NanoConfig) -> CGFloat {
         let margin = config.bar.margin
         return Theme.sidebarContainerWidth + CGFloat(margin.left + margin.right) + Theme.shadowOverflow
+            + Theme.downloadsListMaxWidth
     }
 }

@@ -23,6 +23,9 @@ extension PillStyle {
             height:       CGFloat(config.height),
             minWidth:     CGFloat(config.minWidth),
             cornerRadius: CGFloat(config.cornerRadius),
+            fontSize:     CGFloat(config.fontSize),
+            iconSize:     CGFloat(config.iconSize),
+            gap:          CGFloat(config.gap),
             border:       config.border.enabled,
             borderWidth:  CGFloat(config.border.width),
             borderColor:  config.border.color.flatMap { Theme.color(hex: $0) }
