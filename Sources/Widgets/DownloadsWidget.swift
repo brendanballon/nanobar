@@ -232,7 +232,7 @@ public struct DownloadsPillView: View {
                alignment: .top)
         .clipShape(RoundedRectangle(cornerRadius: pillStyle.cornerRadius, style: .continuous))
         .overlay { if showing { resizeHandles } }
-        .nanoPill(focused: showing || dropTargeted, hovered: hovered && !showing, intrinsic: true)
+        .nanoPill(hovered: hovered && !showing, intrinsic: true)
         .onDrop(of: [.fileURL], delegate: DownloadsDropDelegate(targeted: $dropTargeted))
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : Theme.easeHover) { hovered = hovering }
@@ -389,7 +389,7 @@ private struct DownloadsTable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let coordinator = context.coordinator
-        let table = DownloadsTableView()
+        let table = NSTableView()
         let column = NSTableColumn(identifier: .init("download"))
         column.resizingMask = .autoresizingMask
         table.addTableColumn(column)
@@ -493,17 +493,6 @@ private struct DownloadsTable: NSViewRepresentable {
                 NSPasteboard.general.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
             })
         }
-    }
-}
-
-private final class DownloadsTableView: NSTableView {
-    override var needsPanelToBecomeKey: Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        // Give the native table keyboard focus in the nonactivating panel.
-        window?.makeKey()
-        window?.makeFirstResponder(self)
-        super.mouseDown(with: event)
     }
 }
 

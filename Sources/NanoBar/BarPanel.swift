@@ -9,7 +9,6 @@ final class BarPanel: NSPanel {
     private var menuBarVisible = false
     private var fullscreenHidden = false
     private let barPosition: BarPosition
-    override var canBecomeKey: Bool { true }
     /// True when the system menu bar auto-hides (no strip reserved in
     /// visibleFrame). Only then does the top bar swap places with the menu bar.
     private let menuBarAutoHides: Bool
